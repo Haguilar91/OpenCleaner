@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#2fd1b0"/>
+      <stop offset="1" stop-color="#0b7a73"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cfeee8"/>
+    </linearGradient>
+    <linearGradient id="straw" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#ffab2e"/>
+    </linearGradient>
+    <filter id="sh" filterUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#04332f" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- app tile -->
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="url(#bg)"/>
+  <rect x="6" y="6" width="116" height="58" rx="28" fill="#ffffff" opacity="0.10"/>
+  <!-- swept dust trail -->
+  <path d="M26 98 C40 112 70 116 100 100" fill="none" stroke="#ffffff" stroke-opacity="0.22"
+        stroke-width="5" stroke-linecap="round"/>
+  <!-- broom, drawn upright then tilted -->
+  <g filter="url(#sh)">
+    <g transform="rotate(38 64 64)">
+      <rect x="60.5" y="8" width="7" height="54" rx="3.5" fill="url(#handle)"/>
+      <path d="M48 62 L80 62 L90 108 Q64 116 38 108 Z" fill="url(#straw)"/>
+      <g stroke="#b86e00" stroke-opacity="0.38" stroke-width="1.6" stroke-linecap="round">
+        <line x1="54" y1="72" x2="50" y2="110"/>
+        <line x1="59" y1="72" x2="57" y2="112"/>
+        <line x1="64" y1="72" x2="64" y2="113"/>
+        <line x1="69" y1="72" x2="71" y2="112"/>
+        <line x1="74" y1="72" x2="78" y2="110"/>
+      </g>
+      <rect x="45" y="55" width="38" height="14" rx="5" fill="url(#handle)"/>
+      <rect x="45" y="63" width="38" height="3" fill="#0b7a73" opacity="0.18"/>
+    </g>
+  </g>
+  <!-- sparkles -->
+  <path d="M34 22 C34.8 28.5 36.5 30.2 43 31 C36.5 31.8 34.8 33.5 34 40 C33.2 33.5 31.5 31.8 25 31 C31.5 30.2 33.2 28.5 34 22 Z" fill="#ffffff" opacity="0.95"/>
+  <path d="M100 76 C100.7 82 102.2 83.5 108 84.2 C102.2 84.9 100.7 86.4 100 92.4 C99.3 86.4 97.8 84.9 92 84.2 C97.8 83.5 99.3 82 100 76 Z" fill="#ffe27a"/>
+  <circle cx="24" cy="58" r="2.4" fill="#ffffff" opacity="0.8"/>
+  <circle cx="106" cy="62" r="2" fill="#ffffff" opacity="0.7"/>
+</svg>
