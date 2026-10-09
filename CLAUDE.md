@@ -24,9 +24,10 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 | Windows WinForms | Runs and scans on Windows 11 (125% scaling); cleaning not fully tested |
 | Windows WinUI 3 | Builds and runs on Windows 11. Needs `app.manifest` (PerMonitorV2 DPI + Win10 supportedOS) or it renders blurry and the mouse wheel does not scroll |
 | Android | Builds (debug APK), runs on a Pixel; features work per the user |
+| Linux binary | `build_binary.sh` makes a ~100 MB PyInstaller single file that runs here; untested on other distros |
 
-Highest-value next steps: build and test WinUI on Windows; test the Mac cleaning flows;
-add Steam rows (shader cache, browser cache, partial downloads) to the Linux app (macOS and
+Highest-value next steps: exercise the real cleaning flows on Windows (WinForms and WinUI) and
+macOS with actual junk; add Steam rows (shader cache, browser cache, partial downloads) to the Linux app (macOS and
 Windows already have them).
 
 ## Shared design rules (keep all apps consistent)
