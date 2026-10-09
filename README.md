@@ -15,6 +15,13 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 
 ## Screenshots
 
+Linux (`linux-cachyos/`):
+
+<p>
+  <img src="docs/screenshots/linux-clean.png" width="49%" alt="Linux: Clean view">
+  <img src="docs/screenshots/linux-disk.png" width="49%" alt="Linux: Disk usage view">
+</p>
+
 macOS (`macos/`):
 
 <p>
