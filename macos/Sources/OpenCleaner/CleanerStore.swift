@@ -8,6 +8,7 @@ final class CleanerStore: ObservableObject {
     @Published var freeText = ""
     @Published var message: String?
     @Published var confirming = false
+    @Published var tab = 0          // 0 = Clean, 1 = Disk usage
 
     init() { updateFree() }
 

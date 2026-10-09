@@ -67,6 +67,11 @@ Windows already have them).
   constructor, inside `SuspendLayout/ResumeLayout`) to scale control bounds; list column widths and
   row heights are not auto-scaled, so wrap them in `S(px)`. Without this, text clips at 125%+.
 - Screenshots live in `docs/screenshots/` (`<platform>-clean.png`, `<platform>-disk.png`).
+- The macOS UI deliberately mirrors the Linux window: header bar (name + refresh, segmented
+  Clean / Disk usage switch, free space), grouped rounded cards, bottom bar with the summary and a
+  prominent Clean button. Selected tab lives in `CleanerStore.tab` (no `@State`). The window uses
+  `.hiddenTitleBar`, so the header has 82pt of leading padding for the traffic-light buttons.
+  The Mac screenshots in `docs/screenshots/` predate this restyle.
 - Wine's list view does not draw groups and may not render some glyphs, so judge the look on real
   Windows, not Wine.
 - **Android**: since Android 11 an app cannot clear other apps' caches or read their private data.

@@ -73,7 +73,7 @@ final class ExplorerModel: ObservableObject {
 
 struct ExplorerView: View {
     @EnvironmentObject var store: CleanerStore
-    @StateObject private var model = ExplorerModel()
+    @ObservedObject var model: ExplorerModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,34 +81,29 @@ struct ExplorerView: View {
                 Button { model.up() } label: { Image(systemName: "chevron.up") }
                     .disabled(!model.canGoUp)
                 Button("Home") { model.setRoot(URL(fileURLWithPath: home)) }
-                Button("Macintosh HD") { model.setRoot(URL(fileURLWithPath: "/")) }
+                Button("System (/)") { model.setRoot(URL(fileURLWithPath: "/")) }
                 Text(model.path.path)
                     .lineLimit(1).truncationMode(.head).foregroundStyle(.secondary)
                 Spacer()
-                Button { model.reload(); store.updateFree() } label: { Image(systemName: "arrow.clockwise") }
             }
-            .padding(10)
+            .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 4)
             Text(model.statusText)
                 .font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.bottom, 6)
-            Divider()
-            List(model.entries) { e in
-                HStack(spacing: 10) {
-                    Image(systemName: e.isDir ? "folder.fill" : "doc")
-                        .foregroundStyle(e.isDir ? Color.accentColor : .secondary).frame(width: 20)
-                    Text(e.name).lineLimit(1)
-                    Spacer()
-                    ProgressView(value: Double(e.size ?? 0), total: Double(model.maxSize))
-                        .frame(width: 90)
-                    Text(e.size.map { fmt($0) } ?? "…")
-                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
-                    Button { model.toTrash = e.id } label: { Image(systemName: "trash") }
-                        .buttonStyle(.borderless).help("Move to Trash")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28).padding(.bottom, 8)
+            ScrollView {
+                Card {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { i, e in
+                            if i > 0 { Divider() }
+                            row(e)
+                        }
+                    }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { if e.isDir { model.go(e.id) } }
+                .padding(.horizontal, 24).padding(.bottom, 16)
             }
         }
+        .onAppear { if model.entries.isEmpty { model.reload() } }
         .alert("Move to Trash?", isPresented: Binding(get: { model.toTrash != nil },
                                                        set: { if !$0 { model.toTrash = nil } })) {
             Button("Move to Trash", role: .destructive) {
@@ -117,5 +112,29 @@ struct ExplorerView: View {
             }
             Button("Cancel", role: .cancel) { model.toTrash = nil }
         } message: { Text(model.toTrash?.path ?? "") }
+    }
+
+    @ViewBuilder private func row(_ e: Entry) -> some View {
+        HStack(spacing: 12) {
+            Button { if e.isDir { model.go(e.id) } } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: e.isDir ? "folder.fill" : "doc")
+                        .foregroundStyle(e.isDir ? Color.accentColor : Color.secondary)
+                        .frame(width: 20)
+                    Text(e.name).lineLimit(1)
+                    Spacer(minLength: 8)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            ProgressView(value: Double(e.size ?? 0), total: Double(model.maxSize))
+                .frame(width: 100)
+            Text(e.size.map { fmt($0) } ?? "…")
+                .monospacedDigit().foregroundStyle(.secondary)
+                .frame(width: 84, alignment: .trailing)
+            Button { model.toTrash = e.id } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless).help("Move to Trash")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
     }
 }
