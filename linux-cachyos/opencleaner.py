@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass, field
 
@@ -42,7 +43,25 @@ def parse_size(text):
     return int(float(m.group(1)) * UNITS[m.group(2).upper()])
 
 
+def host_env():
+    """Environment for host programs (pacman, pkexec, flatpak...).
+
+    A PyInstaller build points LD_LIBRARY_PATH at its bundled libraries; put the original
+    value back so host tools load the system's own libraries, not ours.
+    """
+    env = dict(os.environ)
+    if getattr(sys, "frozen", False):
+        for var in ("LD_LIBRARY_PATH", "LD_PRELOAD"):
+            orig = env.pop(var + "_ORIG", None)
+            if orig is not None:
+                env[var] = orig
+            else:
+                env.pop(var, None)
+    return env
+
+
 def run(cmd, **kw):
+    kw.setdefault("env", host_env())
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
@@ -444,6 +463,8 @@ class Window(Adw.ApplicationWindow):
         header = Adw.HeaderBar()
         self.scan_btn = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Rescan")
         self.scan_btn.connect("clicked", self.on_refresh)
+        brand = Gtk.Label(label="OpenCleaner", css_classes=["title-4"], margin_start=6, margin_end=10)
+        header.pack_start(brand)
         header.pack_start(self.scan_btn)
         self.free_label = Gtk.Label(css_classes=["dim-label"])
         header.pack_end(self.free_label)

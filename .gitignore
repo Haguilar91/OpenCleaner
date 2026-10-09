@@ -9,3 +9,6 @@ build/
 bin/
 obj/
 publish/
+dist/
+.buildenv/
+*.spec
