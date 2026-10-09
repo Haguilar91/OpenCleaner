@@ -6,3 +6,6 @@ build/
 *.exe
 *.app
 .DS_Store
+bin/
+obj/
+publish/
