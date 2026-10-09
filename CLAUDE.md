@@ -21,7 +21,7 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 |---|---|
 | Linux | Run and tested on CachyOS (GNOME) |
 | macOS | Builds on a Mac (needed fixes for Command Line Tools only builds, see pitfalls); cleaning flows not fully tested |
-| Windows WinForms | Compile-checked with Mono `mcs -langversion:5`; opens and scans under Wine; **never run on real Windows** |
+| Windows WinForms | Runs and scans on Windows 11 (125% scaling); cleaning not fully tested |
 | Windows WinUI 3 | Builds and runs on Windows 11. Needs `app.manifest` (PerMonitorV2 DPI + Win10 supportedOS) or it renders blurry and the mouse wheel does not scroll |
 | Android | Builds (debug APK), runs on a Pixel; features work per the user |
 
@@ -62,6 +62,10 @@ Windows already have them).
 - **SwiftUI `@State` fails with Command Line Tools only** (the macro plugin is missing): state
   lives in `ObservableObject`s (`@Published`) instead. Keep long expressions short or the Swift
   type-checker times out.
+- **WinForms layout is in 96 DPI pixels**: the form uses `AutoScaleMode.Dpi` (set at the end of the
+  constructor, inside `SuspendLayout/ResumeLayout`) to scale control bounds; list column widths and
+  row heights are not auto-scaled, so wrap them in `S(px)`. Without this, text clips at 125%+.
+- Screenshots live in `docs/screenshots/` (`<platform>-clean.png`, `<platform>-disk.png`).
 - Wine's list view does not draw groups and may not render some glyphs, so judge the look on real
   Windows, not Wine.
 - **Android**: since Android 11 an app cannot clear other apps' caches or read their private data.

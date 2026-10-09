@@ -13,6 +13,37 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | `windows-winui/` | OpenCleaner for Windows, modern WinUI 3 look (needs .NET 8 SDK) | on Windows: `windows-winui\build.bat`, then `publish\OpenCleaner.exe` |
 | `android/` | OpenCleaner for Android (Kotlin + Compose) | build with Android Studio or `gradle assembleDebug`, then install the APK |
 
+## Screenshots
+
+macOS (`macos/`):
+
+<p>
+  <img src="docs/screenshots/macos-clean.png" width="49%" alt="macOS: Clean tab">
+  <img src="docs/screenshots/macos-disk.png" width="49%" alt="macOS: Disk usage tab">
+</p>
+
+Android (`android/`):
+
+<p>
+  <img src="docs/screenshots/android-clean.png" width="32%" alt="Android: Clean tab">
+  <img src="docs/screenshots/android-storage.png" width="32%" alt="Android: Storage tab">
+  <img src="docs/screenshots/android-apps.png" width="32%" alt="Android: Apps tab">
+</p>
+
+Windows, WinUI 3 (`windows-winui/`):
+
+<p>
+  <img src="docs/screenshots/windows-winui-clean.png" width="49%" alt="WinUI: Clean page">
+  <img src="docs/screenshots/windows-winui-disk.png" width="49%" alt="WinUI: Disk usage page">
+</p>
+
+Windows, WinForms (`windows/`):
+
+<p>
+  <img src="docs/screenshots/windows-winforms-clean.png" width="49%" alt="WinForms: Clean tab">
+  <img src="docs/screenshots/windows-winforms-disk.png" width="49%" alt="WinForms: Disk usage tab">
+</p>
+
 ## What they clean
 
 - **Linux:** pacman cache and orphans, systemd journal, unused Flatpak runtimes, browser
@@ -38,9 +69,9 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 |---|---|
 | Linux | Run and tested on CachyOS (GNOME) |
 | macOS | Builds on a Mac (macOS 13+); cleaning flows not fully tested yet |
-| Windows (WinForms) | Compile-checked under C# 5 with Mono; opens and scans under Wine; not yet run on Windows |
-| Windows (WinUI 3) | Written, not yet built: shared logic compile-checked, UI pending a first build on Windows |
-| Android | Compiles to an APK; not yet tested on a device |
+| Windows (WinForms) | Runs and scans on Windows 11; cleaning not fully tested yet |
+| Windows (WinUI 3) | Builds and runs on Windows 11; cleaning not fully tested yet |
+| Android | Runs on a Pixel; features work |
 
 Use at your own risk and read the confirmation list before cleaning. Bug reports and pull
 requests welcome.
