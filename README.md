@@ -7,9 +7,9 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 
 | Folder | App | Run it |
 |---|---|---|
-| `linux-cachyos/` | CachyOS Cleaner (GTK4 + libadwaita, Python) | `python3 linux-cachyos/cachy_cleaner.py` |
-| `macos/` | Mac Cleaner (SwiftUI) | on a Mac: `cd macos && ./build_app.sh` |
-| `windows/` | Win Cleaner (C# WinForms) | on Windows: double-click `windows/build.bat`, then `WinCleaner.exe` |
+| `linux-cachyos/` | OpenCleaner for Linux (GTK4 + libadwaita, Python) | `python3 linux-cachyos/opencleaner.py` |
+| `macos/` | OpenCleaner for macOS (SwiftUI) | on a Mac: `cd macos && ./build_app.sh` |
+| `windows/` | OpenCleaner for Windows (C# WinForms) | on Windows: double-click `windows/build.bat`, then `OpenCleaner.exe` |
 | `android/` | OpenCleaner for Android (Kotlin + Compose) | build with Android Studio or `gradle assembleDebug`, then install the APK |
 
 ## What they clean

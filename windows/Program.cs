@@ -1,4 +1,4 @@
-// Win Cleaner: scan for reclaimable disk space on Windows, review it, then clean.
+// OpenCleaner: scan for reclaimable disk space on Windows, review it, then clean.
 // Written in C# 5 so the compiler built into Windows (csc.exe) can build it. See build.bat.
 using System;
 using System.Collections.Generic;
@@ -16,9 +16,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Microsoft.VisualBasic.FileIO;
+using System.Reflection;
 
-namespace WinCleaner
+namespace OpenCleaner
 {
     // ------------------------------------------------------------------ model
     class Item
@@ -155,6 +155,29 @@ namespace WinCleaner
                 using (Process p = Process.Start(psi)) { p.WaitForExit(30000); }
             }
             catch { }
+        }
+
+        // Uses Windows' own Microsoft.VisualBasic.FileIO.FileSystem through reflection, so the
+        // program can be compiled on systems that do not have that library (e.g. Mono on Linux).
+        public static void SendToRecycleBin(string path)
+        {
+            Assembly vb = Assembly.Load(
+                "Microsoft.VisualBasic, Version=10.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a");
+            Type fs = vb.GetType("Microsoft.VisualBasic.FileIO.FileSystem", true);
+            Type ui = vb.GetType("Microsoft.VisualBasic.FileIO.UIOption", true);
+            Type rec = vb.GetType("Microsoft.VisualBasic.FileIO.RecycleOption", true);
+            object onlyErrors = Enum.Parse(ui, "OnlyErrorDialogs");
+            object toBin = Enum.Parse(rec, "SendToRecycleBin");
+            string method = IsDir(path) ? "DeleteDirectory" : "DeleteFile";
+            try
+            {
+                fs.GetMethod(method, new Type[] { typeof(string), ui, rec })
+                  .Invoke(null, new object[] { path, onlyErrors, toBin });
+            }
+            catch (TargetInvocationException ex)
+            {
+                throw ex.InnerException ?? ex;
+            }
         }
 
         public static bool IsAdmin()
@@ -474,7 +497,7 @@ namespace WinCleaner
         // Game name from the Steam store, cached on disk. Null when offline.
         static string StoreName(string id)
         {
-            string cacheFile = Path.Combine(Local, "WinCleaner\\steam_names.txt");
+            string cacheFile = Path.Combine(Local, "OpenCleaner\\steam_names.txt");
             Dictionary<string, string> cache = new Dictionary<string, string>();
             try
             {
@@ -631,6 +654,8 @@ namespace WinCleaner
     class MainForm : Form
     {
         readonly bool isAdmin = Util.IsAdmin();
+        static readonly Color Teal = Color.FromArgb(11, 122, 115);
+        static readonly Color Green = Color.FromArgb(30, 140, 80);
         TabControl tabs = new TabControl();
         Label freeLabel = new Label();
 
@@ -654,7 +679,7 @@ namespace WinCleaner
 
         public MainForm()
         {
-            Text = "Win Cleaner";
+            Text = "OpenCleaner";
             Width = 940; Height = 680;
             MinimumSize = new Size(760, 520);
             StartPosition = FormStartPosition.CenterScreen;
@@ -662,25 +687,32 @@ namespace WinCleaner
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             Panel header = new Panel();
-            header.Dock = DockStyle.Top; header.Height = 34;
-            freeLabel.Dock = DockStyle.Right; freeLabel.Width = 320;
-            freeLabel.TextAlign = ContentAlignment.MiddleRight;
-            freeLabel.ForeColor = Color.DimGray;
+            header.Dock = DockStyle.Top; header.Height = 52; header.BackColor = Teal;
+            PictureBox logo = new PictureBox();
+            logo.SetBounds(12, 10, 32, 32); logo.SizeMode = PictureBoxSizeMode.Zoom;
+            logo.BackColor = Color.Transparent;
+            try { logo.Image = Icon.ExtractAssociatedIcon(Application.ExecutablePath).ToBitmap(); } catch { }
             Label title = new Label();
-            title.Text = "  Win Cleaner" + (isAdmin ? "  (administrator)" : "");
-            title.Dock = DockStyle.Fill; title.TextAlign = ContentAlignment.MiddleLeft;
-            title.Font = new Font("Segoe UI Semibold", 11f);
+            title.Text = "OpenCleaner" + (isAdmin ? "   (administrator)" : "");
+            title.SetBounds(52, 0, 420, 52); title.TextAlign = ContentAlignment.MiddleLeft;
+            title.Font = new Font("Segoe UI Semibold", 13f); title.ForeColor = Color.White;
+            freeLabel.Dock = DockStyle.Right; freeLabel.Width = 340;
+            freeLabel.TextAlign = ContentAlignment.MiddleRight;
+            freeLabel.ForeColor = Color.White; freeLabel.Font = new Font("Segoe UI", 10f);
+            header.Controls.Add(logo);
             header.Controls.Add(title);
             header.Controls.Add(freeLabel);
 
             tabs.Dock = DockStyle.Fill;
+            tabs.Padding = new Point(22, 6);
+            tabs.Font = new Font("Segoe UI", 10f);
             TabPage cleanTab = new TabPage("Clean");
             TabPage diskTab = new TabPage("Disk usage");
             tabs.TabPages.Add(cleanTab);
             tabs.TabPages.Add(diskTab);
-            Controls.Add(tabs);
             Controls.Add(header);
-            header.BringToFront();   // keep header above the tab control
+            Controls.Add(tabs);
+            tabs.BringToFront();     // docking runs back to front: the Fill control goes last
 
             BuildCleanTab(cleanTab);
             BuildDiskTab(diskTab);
@@ -709,24 +741,31 @@ namespace WinCleaner
             cleanList.FullRowSelect = true;
             cleanList.ShowGroups = true;
             cleanList.HeaderStyle = ColumnHeaderStyle.Nonclickable;
-            cleanList.Columns.Add("Item", 260);
-            cleanList.Columns.Add("Details", 440);
-            cleanList.Columns.Add("Size", 110, HorizontalAlignment.Right);
+            cleanList.Font = new Font("Segoe UI", 10f);
+            cleanList.BorderStyle = BorderStyle.None;
+            cleanList.SmallImageList = RowHeight(30);
+            cleanList.Columns.Add("Item", 280);
+            cleanList.Columns.Add("Details", 400);
+            cleanList.Columns.Add("Size", 130, HorizontalAlignment.Right);
+            cleanList.Resize += delegate { FitColumns(cleanList, 280, 130); };
             cleanList.ItemCheck += OnItemCheck;
             cleanList.ItemChecked += delegate { if (!populating) UpdateSummary(); };
 
             Panel bar = new Panel();
-            bar.Dock = DockStyle.Bottom; bar.Height = 50;
+            bar.Dock = DockStyle.Bottom; bar.Height = 56;
 
-            scanBtn.Text = "Rescan"; scanBtn.SetBounds(10, 10, 90, 30);
+            scanBtn.Text = "Rescan"; scanBtn.SetBounds(12, 12, 90, 32);
+            StyleButton(scanBtn, false);
             scanBtn.Click += delegate { Scan(); };
-            adminBtn.Text = "Restart as administrator"; adminBtn.SetBounds(110, 10, 170, 30);
+            adminBtn.Text = "Restart as administrator"; adminBtn.SetBounds(112, 12, 190, 32);
+            StyleButton(adminBtn, false);
             adminBtn.Visible = !isAdmin;
             adminBtn.Click += OnRestartAdmin;
-            cleanBtn.Text = "Clean selected"; cleanBtn.Width = 130; cleanBtn.Height = 30;
+            cleanBtn.Text = "Clean selected"; cleanBtn.Width = 150; cleanBtn.Height = 34;
+            StyleButton(cleanBtn, true);
             cleanBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             cleanBtn.Click += OnClean;
-            summary.AutoSize = false; summary.Width = 260; summary.Height = 30;
+            summary.AutoSize = false; summary.Width = 280; summary.Height = 32;
             summary.TextAlign = ContentAlignment.MiddleRight;
             summary.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
@@ -734,12 +773,39 @@ namespace WinCleaner
             bar.Controls.Add(summary); bar.Controls.Add(cleanBtn);
             bar.Resize += delegate
             {
-                cleanBtn.Location = new Point(bar.Width - cleanBtn.Width - 10, 10);
-                summary.Location = new Point(cleanBtn.Left - summary.Width - 10, 10);
+                cleanBtn.Location = new Point(bar.Width - cleanBtn.Width - 12, 11);
+                summary.Location = new Point(cleanBtn.Left - summary.Width - 10, 12);
             };
             page.Controls.Add(cleanList);
             page.Controls.Add(bar);
             cleanList.BringToFront();
+        }
+
+        // A 1px-wide image list is the standard trick to make ListView rows taller.
+        static ImageList RowHeight(int h)
+        {
+            ImageList il = new ImageList();
+            il.ImageSize = new Size(1, h);
+            return il;
+        }
+
+        // Keeps the middle "Details" column stretching to fill the list.
+        static void FitColumns(ListView lv, int first, int last)
+        {
+            int w = lv.ClientSize.Width - first - last - 4;
+            if (w > 150) lv.Columns[1].Width = w;
+        }
+
+        static void StyleButton(Button b, bool primary)
+        {
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = primary ? 0 : 1;
+            b.FlatAppearance.BorderColor = Color.Silver;
+            b.BackColor = primary ? Teal : Color.White;
+            b.ForeColor = primary ? Color.White : Color.Black;
+            b.Font = new Font("Segoe UI", 9.5f);
+            b.Cursor = Cursors.Hand;
+            b.UseVisualStyleBackColor = false;
         }
 
         bool Disabled(Item it) { return it.Empty || (it.NeedsAdmin && !isAdmin); }
@@ -810,7 +876,7 @@ namespace WinCleaner
                     groups[it.Group] = g;
                     cleanList.Groups.Add(g);
                 }
-                string sizeText = it.Empty ? (it.Failed ? "Scan failed" : "Clean ✓")
+                string sizeText = it.Empty ? (it.Failed ? "Scan failed" : "Clean")
                                 : (it.NeedsAdmin && !isAdmin ? "Needs admin" : Util.Fmt(it.Size));
                 ListViewItem lvi = new ListViewItem(it.Title);
                 lvi.SubItems.Add(it.Subtitle);
@@ -818,7 +884,7 @@ namespace WinCleaner
                 lvi.Group = g;
                 lvi.Tag = it;
                 lvi.Checked = it.Selected && !Disabled(it);
-                if (it.Empty) lvi.ForeColor = it.Failed ? Color.Firebrick : Color.SeaGreen;
+                if (it.Empty) lvi.ForeColor = it.Failed ? Color.Firebrick : Green;
                 else if (Disabled(it)) lvi.ForeColor = Color.Gray;
                 cleanList.Items.Add(lvi);
             }
@@ -854,7 +920,7 @@ namespace WinCleaner
             if (skipped > 0) msg.Append("\n\n" + skipped + " file(s) were in use and skipped.");
             foreach (CleanResult r in results)
                 if (r.Error != null) msg.Append("\n\n" + r.Title + ": " + r.Error);
-            MessageBox.Show(this, msg.ToString(), "Win Cleaner");
+            MessageBox.Show(this, msg.ToString(), "OpenCleaner");
             Scan();
             LoadDisk(current);
         }
@@ -907,9 +973,17 @@ namespace WinCleaner
             diskList.View = View.Details;
             diskList.FullRowSelect = true;
             diskList.MultiSelect = false;
+            diskList.Font = new Font("Segoe UI", 10f);
+            diskList.BorderStyle = BorderStyle.None;
+            diskList.SmallImageList = RowHeight(28);
             diskList.Columns.Add("Name", 460);
-            diskList.Columns.Add("Type", 80);
-            diskList.Columns.Add("Size", 110, HorizontalAlignment.Right);
+            diskList.Columns.Add("Type", 90);
+            diskList.Columns.Add("Size", 130, HorizontalAlignment.Right);
+            diskList.Resize += delegate
+            {
+                int w = diskList.ClientSize.Width - 90 - 130 - 4;
+                if (w > 150) diskList.Columns[0].Width = w;
+            };
             diskList.ListViewItemSorter = new SizeComparer();
             diskList.DoubleClick += delegate
             {
@@ -998,10 +1072,7 @@ namespace WinCleaner
                     MessageBoxIcon.Question) != DialogResult.Yes) return;
             try
             {
-                if (Util.IsDir(p))
-                    FileSystem.DeleteDirectory(p, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-                else
-                    FileSystem.DeleteFile(p, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+                Util.SendToRecycleBin(p);
             }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not move to Recycle Bin"); }
             UpdateFree();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CachyOS Cleaner: scan for reclaimable disk space, review it, then clean.
+"""OpenCleaner: scan for reclaimable disk space, review it, then clean.
 
 Nothing is deleted until you tick items and confirm. Root-level actions go
 through pkexec (polkit prompt), so the app itself never runs as root.
@@ -174,7 +174,7 @@ def scan_user_cache():
     return items
 
 
-NAME_CACHE = os.path.join(HOME, ".cache", "cachy-cleaner", "steam_names.json")
+NAME_CACHE = os.path.join(HOME, ".cache", "opencleaner", "steam_names.json")
 
 
 def steam_name(appid):
@@ -435,7 +435,7 @@ class Explorer(Gtk.Box):
 
 class Window(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="CachyOS Cleaner",
+        super().__init__(application=app, title="OpenCleaner",
                          default_width=720, default_height=780)
         self.rows = []  # (item, check_button)
         self.busy = False
@@ -616,11 +616,11 @@ class Window(Adw.ApplicationWindow):
 
 class App(Adw.Application):
     def __init__(self):
-        super().__init__(application_id="local.cachy.Cleaner")
+        super().__init__(application_id="local.opencleaner.OpenCleaner")
 
     def do_startup(self):
         Adw.Application.do_startup(self)
-        Gtk.Window.set_default_icon_name("local.cachy.Cleaner")
+        Gtk.Window.set_default_icon_name("local.opencleaner.OpenCleaner")
 
     def do_activate(self):
         (self.props.active_window or Window(self)).present()

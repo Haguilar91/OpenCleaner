@@ -1,11 +1,11 @@
 import SwiftUI
 
 @main
-struct MacCleanerApp: App {
+struct OpenCleanerApp: App {
     @StateObject private var store = CleanerStore()
 
     var body: some Scene {
-        WindowGroup("Mac Cleaner") {
+        WindowGroup("OpenCleaner") {
             TabView {
                 CleanView()
                     .tabItem { Label("Clean", systemImage: "sparkles") }

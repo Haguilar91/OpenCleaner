@@ -155,7 +155,7 @@ enum Scanners {
 
     /// Game name from the Steam store, cached on disk. Nil when offline.
     static func steamName(_ id: String) -> String? {
-        let cacheURL = lib.appendingPathComponent("Application Support/MacCleaner/steam_names.json")
+        let cacheURL = lib.appendingPathComponent("Application Support/OpenCleaner/steam_names.json")
         var cache = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: cacheURL))) ?? [:]
         if let v = cache[id] { return v }
         guard let url = URL(string: "https://store.steampowered.com/api/appdetails?appids=\(id)&filters=basic")

@@ -1,16 +1,20 @@
-# Win Cleaner
+# OpenCleaner for Windows
 
 Finds reclaimable disk space on Windows, shows it with sizes, and deletes only what you
-tick and confirm. Windows sibling of the CachyOS Cleaner and Mac Cleaner.
+tick and confirm. Windows version of OpenCleaner.
 
 **Status: written on Linux, compile-checked with Mono under C# 5 rules, but never run on
 Windows.** Expect to fix a small thing or two on first launch.
 
 ## Build and run
 
+**Quick start:** `opencleaner-windows.zip` also contains a prebuilt `OpenCleaner.exe` (built with Mono's
+compiler on Linux). It is unsigned, so SmartScreen will warn: More info > Run anyway.
+To build it yourself instead:
+
 1. Unzip the folder anywhere.
 2. Double-click `build.bat` (uses the C# compiler built into Windows 10/11, no installs).
-3. Double-click `WinCleaner.exe`.
+3. Double-click `OpenCleaner.exe`.
 
 SmartScreen may warn about an unknown app, since you built it yourself: More info > Run anyway.
 

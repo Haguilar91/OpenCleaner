@@ -6,7 +6,7 @@ Kotlin + Jetpack Compose. Same idea as the desktop apps, within what Android all
 | Tab | What it does |
 |---|---|
 | Clean | OpenCleaner's own cache, thumbnail leftovers, old APKs in Downloads, WhatsApp sent-media copies, files over 100 MB. Every category always shows a row, with **Clean ✓** when empty. |
-| Storage | Browse internal storage by size and delete items (permanent: Android has no trash for files). |
+| Storage | Browse internal storage by size, tap a file to preview it (images, video thumbnails, text) or open it in another app, and delete items (permanent: Android has no trash for files). |
 | Apps | Every app ranked by size with its cache size. Tap one to open its Android settings page, where you can clear its cache or uninstall. |
 
 Nothing is deleted until you tick items and confirm. Deletes are limited to shared storage and

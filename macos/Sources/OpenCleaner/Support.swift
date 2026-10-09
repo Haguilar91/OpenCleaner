@@ -68,7 +68,7 @@ enum FS {
     static func safeRemove(_ url: URL) throws {
         let p = url.standardizedFileURL.path
         guard p.hasPrefix(home + "/"), p != home else {
-            throw NSError(domain: "MacCleaner", code: 1,
+            throw NSError(domain: "OpenCleaner", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Refusing to delete outside home: \(p)"])
         }
         try FileManager.default.removeItem(at: url)   // removes a symlink itself, not its target

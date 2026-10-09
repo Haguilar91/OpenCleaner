@@ -5,12 +5,25 @@ import android.app.usage.StorageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.ThumbnailUtils
 import android.net.Uri
+import android.util.Size
+import android.webkit.MimeTypeMap
 import android.os.Process
 import android.os.storage.StorageManager
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -174,6 +187,7 @@ fun StorageScreen(onChanged: () -> Unit) {
     var entries by remember { mutableStateOf<List<Entry>>(emptyList()) }
     var reload by remember { mutableIntStateOf(0) }
     var toDelete by remember { mutableStateOf<File?>(null) }
+    var preview by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
@@ -216,7 +230,7 @@ fun StorageScreen(onChanged: () -> Unit) {
             items(entries, key = { it.file.path }) { e ->
                 Column(
                     Modifier.fillMaxWidth()
-                        .clickable(enabled = e.file.isDirectory) { path = e.file }
+                        .clickable { if (e.file.isDirectory) path = e.file else preview = e.file }
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -236,6 +250,7 @@ fun StorageScreen(onChanged: () -> Unit) {
         }
     }
 
+    preview?.let { PreviewDialog(it) { preview = null } }
     toDelete?.let { f ->
         AlertDialog(
             onDismissRequest = { toDelete = null },
@@ -295,11 +310,32 @@ fun AppsScreen() {
     val ctx = LocalContext.current
     var access by remember { mutableStateOf(hasUsageAccess(ctx)) }
     var apps by remember { mutableStateOf<List<AppRow>?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var walk by remember { mutableStateOf<List<AppRow>>(emptyList()) }
+    var walkIndex by remember { mutableIntStateOf(-1) }
+
+    fun openApp(pkg: String) {
+        ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+    }
+    // Opens the next app in the walkthrough, or ends it
+    fun advance() {
+        val next = walkIndex + 1
+        if (next < walk.size) { walkIndex = next; openApp(walk[next].pkg) } else walkIndex = -1
+    }
+    // Android's own "free up space" screen, falling back to the storage settings
+    fun systemCleaner() {
+        val tries = listOf(Intent(StorageManager.ACTION_CLEAR_APP_CACHE),
+            Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))
+        for (i in tries) {
+            try { ctx.startActivity(i); return } catch (e: Exception) { /* try the next one */ }
+        }
+    }
 
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
         access = hasUsageAccess(ctx)
+        if (walkIndex >= 0) { refresh++; advance() }   // back from an app's settings: open the next
     }
-    LaunchedEffect(access) {
+    LaunchedEffect(access, refresh) {
         apps = if (access) withContext(Dispatchers.IO) { loadApps(ctx) } else null
     }
 
@@ -321,6 +357,24 @@ fun AppsScreen() {
         return
     }
     Column(Modifier.fillMaxSize()) {
+        if (walkIndex >= 0 && walkIndex < walk.size) {
+            Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Clearing caches ${walkIndex + 1} of ${walk.size}: ${walk[walkIndex].label}\n" +
+                    "Tap Storage & cache, then Clear cache, then go back.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = { advance() }) { Text("Skip") }
+                TextButton(onClick = { walkIndex = -1 }) { Text("Stop") }
+            }
+        } else {
+            val big = list.filter { it.cache >= 5L * 1024 * 1024 }.sortedByDescending { it.cache }.take(15)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { systemCleaner() }) { Text("Free up space") }
+                Button(onClick = { walk = big; walkIndex = -1; advance() }, enabled = big.isNotEmpty()) {
+                    Text("Clear caches (${big.size})")
+                }
+            }
+        }
         Text("Tap an app to open its settings, where you can clear its cache or uninstall it.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp, 8.dp),
@@ -346,4 +400,87 @@ fun AppsScreen() {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------- file preview
+private val TEXT_EXT = setOf("txt", "log", "md", "json", "xml", "csv", "html", "htm", "ini", "conf",
+    "cfg", "properties", "yaml", "yml", "kt", "java", "py", "js", "sh", "srt", "vcf", "gpx")
+
+private fun mimeOf(f: File): String =
+    MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
+
+/** Image or video thumbnail, or null for other types. */
+private fun loadThumb(f: File, mime: String): Bitmap? = try {
+    when {
+        mime.startsWith("image/") -> {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.path, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+            BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+        mime.startsWith("video/") -> ThumbnailUtils.createVideoThumbnail(f, Size(720, 720), null)
+        else -> null
+    }
+} catch (e: Exception) { null }
+
+/** First few KB of a text file, or null if it looks binary. */
+private fun readHead(f: File): String? = try {
+    f.inputStream().use { input ->
+        val buf = ByteArray(4000)
+        val n = input.read(buf)
+        if (n <= 0) "" else {
+            val text = String(buf, 0, n, Charsets.UTF_8)
+            if (text.count { it == '\u0000' } > 0) null else text
+        }
+    }
+} catch (e: Exception) { null }
+
+@Composable
+private fun PreviewDialog(f: File, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    val mime = remember(f) { mimeOf(f) }
+    val bitmap by produceState<Bitmap?>(null, f) { value = withContext(Dispatchers.IO) { loadThumb(f, mime) } }
+    val text by produceState<String?>(null, f) {
+        value = if (mime.startsWith("text/") || f.extension.lowercase() in TEXT_EXT)
+            withContext(Dispatchers.IO) { readHead(f) } else null
+    }
+    val modified = remember(f) { java.text.DateFormat.getDateTimeInstance().format(java.util.Date(f.lastModified())) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(f.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                bitmap?.let {
+                    Image(bitmap = it.asImageBitmap(), contentDescription = null,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                        contentScale = ContentScale.Fit)
+                }
+                text?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
+                            .verticalScroll(rememberScrollState()))
+                }
+                if (bitmap == null && text == null) {
+                    Text("No preview for this file type. Use Open with... to view it in another app.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Text("\n${fmt(f.length())} · $mime\n$modified\n${f.parent ?: ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                try {
+                    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
+                    val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    ctx.startActivity(Intent.createChooser(view, "Open with"))
+                } catch (e: Exception) { /* no app can open this file */ }
+            }) { Text("Open with...") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }

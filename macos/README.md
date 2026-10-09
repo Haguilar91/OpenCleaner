@@ -1,7 +1,7 @@
-# Mac Cleaner
+# OpenCleaner for macOS
 
 A SwiftUI app that finds reclaimable disk space on macOS, shows it with sizes, and
-deletes only what you tick and confirm. It is the macOS sibling of the CachyOS Cleaner.
+deletes only what you tick and confirm. It is the macOS version of OpenCleaner.
 
 **Status:** builds on macOS 13+. The cleaning flows have not been fully tested, so read the
 confirmation list before cleaning.
@@ -10,7 +10,7 @@ confirmation list before cleaning.
 
     xcode-select --install      # once, if you have no Swift toolchain
     ./build_app.sh
-    open build/MacCleaner.app
+    open build/OpenCleaner.app
 
 Needs macOS 13 or newer. You can also open the folder in Xcode (File > Open) and press Run.
 
