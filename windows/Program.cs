@@ -679,6 +679,7 @@ namespace OpenCleaner
 
         public MainForm()
         {
+            SuspendLayout();
             Text = "OpenCleaner";
             Width = 940; Height = 680;
             MinimumSize = new Size(760, 520);
@@ -718,7 +719,21 @@ namespace OpenCleaner
             BuildDiskTab(diskTab);
             UpdateFree();
             Shown += delegate { Scan(); LoadDisk(Environment.GetEnvironmentVariable("USERPROFILE")); };
+
+            // Layout above is in 96 DPI pixels; scale it to the screen (fonts already scale on their own).
+            AutoScaleDimensions = new SizeF(96f, 96f);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            ResumeLayout(false);
         }
+
+        // Pixel sizes that auto-scaling does not touch (list columns, row heights) go through S().
+        static readonly float dpiScale = ScreenScale();
+        static float ScreenScale()
+        {
+            try { using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) return g.DpiX / 96f; }
+            catch { return 1f; }
+        }
+        static int S(int px) { return (int)Math.Round(px * dpiScale); }
 
         void UpdateFree()
         {
@@ -743,11 +758,11 @@ namespace OpenCleaner
             cleanList.HeaderStyle = ColumnHeaderStyle.Nonclickable;
             cleanList.Font = new Font("Segoe UI", 10f);
             cleanList.BorderStyle = BorderStyle.None;
-            cleanList.SmallImageList = RowHeight(30);
-            cleanList.Columns.Add("Item", 280);
-            cleanList.Columns.Add("Details", 400);
-            cleanList.Columns.Add("Size", 130, HorizontalAlignment.Right);
-            cleanList.Resize += delegate { FitColumns(cleanList, 280, 130); };
+            cleanList.SmallImageList = RowHeight(S(30));
+            cleanList.Columns.Add("Item", S(280));
+            cleanList.Columns.Add("Details", S(400));
+            cleanList.Columns.Add("Size", S(130), HorizontalAlignment.Right);
+            cleanList.Resize += delegate { FitColumns(cleanList, S(280), S(130)); };
             cleanList.ItemCheck += OnItemCheck;
             cleanList.ItemChecked += delegate { if (!populating) UpdateSummary(); };
 
@@ -773,8 +788,8 @@ namespace OpenCleaner
             bar.Controls.Add(summary); bar.Controls.Add(cleanBtn);
             bar.Resize += delegate
             {
-                cleanBtn.Location = new Point(bar.Width - cleanBtn.Width - 12, 11);
-                summary.Location = new Point(cleanBtn.Left - summary.Width - 10, 12);
+                cleanBtn.Location = new Point(bar.Width - cleanBtn.Width - S(12), S(11));
+                summary.Location = new Point(cleanBtn.Left - summary.Width - S(10), S(12));
             };
             page.Controls.Add(cleanList);
             page.Controls.Add(bar);
@@ -793,7 +808,7 @@ namespace OpenCleaner
         static void FitColumns(ListView lv, int first, int last)
         {
             int w = lv.ClientSize.Width - first - last - 4;
-            if (w > 150) lv.Columns[1].Width = w;
+            if (w > S(150)) lv.Columns[1].Width = w;
         }
 
         static void StyleButton(Button b, bool primary)
@@ -975,14 +990,14 @@ namespace OpenCleaner
             diskList.MultiSelect = false;
             diskList.Font = new Font("Segoe UI", 10f);
             diskList.BorderStyle = BorderStyle.None;
-            diskList.SmallImageList = RowHeight(28);
-            diskList.Columns.Add("Name", 460);
-            diskList.Columns.Add("Type", 90);
-            diskList.Columns.Add("Size", 130, HorizontalAlignment.Right);
+            diskList.SmallImageList = RowHeight(S(28));
+            diskList.Columns.Add("Name", S(460));
+            diskList.Columns.Add("Type", S(90));
+            diskList.Columns.Add("Size", S(130), HorizontalAlignment.Right);
             diskList.Resize += delegate
             {
-                int w = diskList.ClientSize.Width - 90 - 130 - 4;
-                if (w > 150) diskList.Columns[0].Width = w;
+                int w = diskList.ClientSize.Width - S(90) - S(130) - 4;
+                if (w > S(150)) diskList.Columns[0].Width = w;
             };
             diskList.ListViewItemSorter = new SizeComparer();
             diskList.DoubleClick += delegate
