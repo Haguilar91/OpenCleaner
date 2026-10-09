@@ -22,7 +22,7 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 | Linux | Run and tested on CachyOS (GNOME) |
 | macOS | Builds on a Mac (needed fixes for Command Line Tools only builds, see pitfalls); cleaning flows not fully tested |
 | Windows WinForms | Compile-checked with Mono `mcs -langversion:5`; opens and scans under Wine; **never run on real Windows** |
-| Windows WinUI 3 | **Never built.** `Core.cs` is compile-checked; `CleanView/DiskView/MainWindow/Ui` are not. First build on Windows will likely show a few errors: fix them |
+| Windows WinUI 3 | Builds and runs on Windows 11. Needs `app.manifest` (PerMonitorV2 DPI + Win10 supportedOS) or it renders blurry and the mouse wheel does not scroll |
 | Android | Builds (debug APK), runs on a Pixel; features work per the user |
 
 Highest-value next steps: build and test WinUI on Windows; test the Mac cleaning flows;
