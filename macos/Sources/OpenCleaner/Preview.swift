@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import QuickLookThumbnailing
+import AVKit
+import ImageIO
 
 private let textExt: Set<String> = ["txt", "log", "md", "json", "xml", "csv", "html", "htm", "ini", "conf",
     "cfg", "plist", "yaml", "yml", "swift", "py", "js", "sh", "srt", "vcf", "gpx", "toml"]
@@ -13,6 +15,28 @@ private func readHead(_ url: URL) -> String? {
     if data.isEmpty { return "" }
     if data.contains(0) { return nil }
     return String(decoding: data, as: UTF8.self)
+}
+
+private let videoExt: Set<String> = ["mp4", "m4v", "mov"]
+private let audioExt: Set<String> = ["mp3", "flac", "m4a", "aac", "wav", "aiff", "alac"]
+
+/// Decoded image, scaled down so very large photos stay light.
+private func loadImage(_ url: URL) -> NSImage? {
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let opts: [CFString: Any] = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 2000,
+    ]
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+}
+
+/// Largest size that fits in maxW x maxH with the image's aspect ratio (small images are scaled up to at least 360 wide).
+private func fitSize(_ size: NSSize, maxW: CGFloat, maxH: CGFloat) -> CGSize {
+    guard size.width > 0, size.height > 0 else { return CGSize(width: maxW, height: maxH) }
+    let k = min(maxW / size.width, maxH / size.height)
+    return CGSize(width: size.width * k, height: size.height * k)
 }
 
 private func thumbnail(_ url: URL) async -> NSImage? {
@@ -30,14 +54,31 @@ final class PreviewModel: ObservableObject {
     @Published var image: NSImage?
     @Published var text: String?
     @Published var loaded = false
+    @Published var player: AVPlayer?
+    @Published var isAudio = false
 
     func load(_ url: URL) async {
-        if textExt.contains(url.pathExtension.lowercased()) {
+        let ext = url.pathExtension.lowercased()
+        if videoExt.contains(ext) || audioExt.contains(ext) {
+            let playable = (try? await AVURLAsset(url: url).load(.isPlayable)) ?? false
+            if playable {
+                isAudio = audioExt.contains(ext)
+                player = AVPlayer(url: url)
+                loaded = true
+                return
+            }
+        }
+        if textExt.contains(ext) {
             text = await Task.detached { readHead(url) }.value
         }
-        if text == nil { image = await thumbnail(url) }
+        if text == nil {
+            image = await Task.detached { loadImage(url) }.value
+            if image == nil { image = await thumbnail(url) }
+        }
         loaded = true
     }
+
+    func stop() { player?.pause(); player = nil }
 }
 
 @MainActor
@@ -64,14 +105,20 @@ struct PreviewSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(url.lastPathComponent).font(.headline).lineLimit(2)
             Group {
-                if let image = model.image {
-                    Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 320)
+                if let player = model.player {
+                    PlayerView(player: player)
+                        .frame(minWidth: 680, maxWidth: .infinity, minHeight: model.isAudio ? 70 : 420,
+                               maxHeight: model.isAudio ? 70 : 420)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else if let image = model.image {
+                    let fit = fitSize(image.size, maxW: 680, maxH: 520)
+                    Image(nsImage: image).resizable().frame(width: fit.width, height: fit.height)
                 } else if let text = model.text {
                     ScrollView {
                         Text(text).font(.system(.caption, design: .monospaced))
                             .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                     }
-                    .frame(height: 240)
+                    .frame(height: 360)
                 } else if model.loaded {
                     Text("No preview for this file type. Use Open to view it in another app.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -94,8 +141,9 @@ struct PreviewSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 460)
+        .frame(width: 720)
         .task { await model.load(url) }
+        .onDisappear { model.stop() }
     }
 }
 
@@ -146,3 +194,19 @@ struct ReviewSheet: View {
 }
 
 struct Identified: Identifiable { let url: URL; var id: URL { url } }
+
+/// AppKit's AVPlayerView (play/pause, seek bar, volume). SwiftUI's own VideoPlayer crashes on some macOS builds.
+struct PlayerView: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let v = AVPlayerView()
+        v.controlsStyle = .floating
+        v.player = player
+        return v
+    }
+
+    func updateNSView(_ v: AVPlayerView, context: Context) {
+        if v.player !== player { v.player = player }
+    }
+}

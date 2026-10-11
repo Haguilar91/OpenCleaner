@@ -12,3 +12,4 @@ publish/
 dist/
 .buildenv/
 *.spec
+.kotlin/
