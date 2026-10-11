@@ -336,11 +336,21 @@ def show_preview(parent, path, on_trash=None):
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12,
                   margin_bottom=12, margin_start=16, margin_end=16)
     shown = False
-    if ctype.startswith("image/") or thumb:
+    video = None
+    media_audio = ctype.startswith("audio/") or ext in {"mp3", "flac", "m4a", "aac", "wav", "ogg", "opus"}
+    media_video = ctype.startswith("video/") or ext in {"mp4", "m4v", "mov", "mkv", "webm", "avi"}
+    if media_audio or media_video:
+        # built-in player (GStreamer): play/pause, seek bar and volume come with Gtk.Video
+        video = Gtk.Video.new_for_filename(path)
+        video.set_autoplay(False)
+        video.set_size_request(-1, 110 if media_audio else 360)
+        box.append(video)
+        shown = True
+    elif ctype.startswith("image/") or thumb:
         pic = Gtk.Picture.new_for_filename(path if ctype.startswith("image/") else thumb)
         pic.set_can_shrink(True)
         pic.set_content_fit(Gtk.ContentFit.CONTAIN)
-        pic.set_size_request(-1, 260)
+        pic.set_size_request(-1, 420)
         box.append(pic)
         shown = True
     elif ctype.startswith("text/") or ext in TEXT_EXT:
@@ -349,7 +359,7 @@ def show_preview(parent, path, on_trash=None):
             tv = Gtk.TextView(editable=False, cursor_visible=False, monospace=True,
                               wrap_mode=Gtk.WrapMode.WORD_CHAR)
             tv.get_buffer().set_text(text)
-            sw = Gtk.ScrolledWindow(min_content_height=200, max_content_height=240,
+            sw = Gtk.ScrolledWindow(min_content_height=240, max_content_height=360,
                                     propagate_natural_height=True)
             sw.set_child(tv)
             box.append(sw)
@@ -362,7 +372,9 @@ def show_preview(parent, path, on_trash=None):
                          css_classes=["caption", "dim-label"], xalign=0, wrap=True, selectable=True))
 
     buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-    dlg = Adw.Dialog(title=os.path.basename(path), content_width=460)
+    dlg = Adw.Dialog(title=os.path.basename(path), content_width=720)
+    if video is not None:
+        dlg.connect("closed", lambda *_: video.set_file(None))   # stop playback
     if on_trash:
         trash = Gtk.Button(label="Move to trash", css_classes=["destructive-action"])
         trash.connect("clicked", lambda *_: (dlg.close(), on_trash(path)))
@@ -414,6 +426,84 @@ def show_review(parent, item):
     dlg.present(parent)
 
 
+# ---------------------------------------------------------------- disk map (treemap)
+KINDS = [  # (label, rgb) in legend order; also the order used by "File type" sort
+    ("Folders", (0.145, 0.388, 0.922)), ("Images", (0.18, 0.62, 0.36)),
+    ("Video", (0.55, 0.33, 0.80)), ("Audio", (0.88, 0.52, 0.14)),
+    ("Documents", (0.10, 0.60, 0.62)), ("Archives", (0.78, 0.27, 0.27)),
+    ("Other", (0.42, 0.46, 0.54)),
+]
+KIND_EXT = {
+    1: {"jpg", "jpeg", "png", "gif", "heic", "webp", "bmp", "tiff", "svg", "raw", "dng"},
+    2: {"mp4", "mov", "m4v", "mkv", "avi", "webm", "wmv"},
+    3: {"mp3", "flac", "m4a", "aac", "wav", "ogg", "opus"},
+    4: {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "txt", "md", "csv", "rtf", "epub"},
+    5: {"zip", "iso", "tar", "gz", "xz", "bz2", "zst", "7z", "rar", "deb", "rpm", "appimage"},
+}
+
+
+def kind_of(path, is_dir):
+    """Index into KINDS for a file or folder."""
+    if is_dir:
+        return 0
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+    for k, exts in KIND_EXT.items():
+        if ext in exts:
+            return k
+    return 6
+
+
+def treemap_layout(sizes, width, height):
+    """Squarified treemap. sizes: positive numbers, largest first. Returns (x, y, w, h) per size."""
+    total = float(sum(sizes))
+    if total <= 0 or width <= 0 or height <= 0:
+        return []
+    scale = width * height / total
+    areas = [s * scale for s in sizes]
+
+    def worst(row, side):
+        s, mx, mn = sum(row), max(row), min(row)
+        if s <= 0 or mn <= 0:
+            return float("inf")
+        return max(side * side * mx / (s * s), s * s / (side * side * mn))
+
+    out = []
+    x = y = 0.0
+    w, h = float(width), float(height)
+    i = 0
+    while i < len(areas):
+        side = min(w, h)
+        end = i + 1
+        while end < len(areas) and worst(areas[i:end + 1], side) <= worst(areas[i:end], side):
+            end += 1
+        row = areas[i:end]
+        rs = sum(row)
+        if w >= h:                       # column on the left
+            cw = rs / h
+            cy = y
+            for a in row:
+                ch = a / cw
+                out.append((x, cy, cw, ch))
+                cy += ch
+            x += cw
+            w = max(w - cw, 0.0)
+        else:                            # row on the top
+            rh = rs / w
+            cx = x
+            for a in row:
+                rw = a / rh
+                out.append((cx, y, rw, rh))
+                cx += rw
+            y += rh
+            h = max(h - rh, 0.0)
+        i = end
+    return out
+
+
+SORTS = ["Biggest first", "Oldest first", "Newest first", "File type"]
+TOPS = [0, 5, 10, 50, 100]   # 0 = all
+
+
 class Explorer(Gtk.Box):
     """Browse folders by size. Deleting only ever moves things to the trash."""
 
@@ -434,25 +524,133 @@ class Explorer(Gtk.Box):
         sys_btn.connect("clicked", lambda *_: self.set_root("/"))
         self.path_label = Gtk.Label(xalign=0, hexpand=True)
         self.path_label.set_ellipsize(Pango.EllipsizeMode.START)
-        for w in (self.up_btn, home_btn, sys_btn, self.path_label):
+        self.sort_mode = 0
+        self.top = 0
+        self.entries = []
+        self.measured = 0
+        self.map_rects = []
+        self.sort_dd = Gtk.DropDown.new_from_strings(SORTS)
+        self.sort_dd.set_tooltip_text("Sort by size, age or type")
+        self.sort_dd.connect("notify::selected", self._on_sort)
+        self.top_dd = Gtk.DropDown.new_from_strings(["All"] + [f"Top {n}" for n in TOPS[1:]])
+        self.top_dd.set_tooltip_text("Show only the first items of the sort")
+        self.top_dd.connect("notify::selected", self._on_top)
+        self.map_btn = Gtk.ToggleButton(icon_name="view-grid-symbolic", tooltip_text="Disk map")
+        self.map_btn.connect("toggled", self._on_map_toggled)
+        for w in (self.up_btn, home_btn, sys_btn, self.path_label, self.sort_dd, self.top_dd,
+                  self.map_btn):
             bar.append(w)
         self.append(bar)
 
         self.status = Gtk.Label(xalign=0, margin_start=16, margin_bottom=4,
                                 css_classes=["dim-label"])
         self.append(self.status)
+        self.progress = Gtk.ProgressBar(margin_start=16, margin_end=16, margin_bottom=6, visible=False)
+        self.append(self.progress)
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
                                 css_classes=["boxed-list"], margin_start=12,
                                 margin_end=12, margin_bottom=12)
         self.list.set_sort_func(self._sort)
+        self.list.set_filter_func(self._filter)
         sw = Gtk.ScrolledWindow(vexpand=True)
         sw.set_child(self.list)
-        self.append(sw)
+
+        # disk map: colored blocks sized by space, click a folder to open it or a file to preview it
+        self.map_area = Gtk.DrawingArea(hexpand=True, vexpand=True, margin_start=12, margin_end=12)
+        self.map_area.set_draw_func(self._draw_map)
+        click = Gtk.GestureClick()
+        click.connect("released", self._on_map_click)
+        self.map_area.add_controller(click)
+        legend = Gtk.Box(spacing=12, margin_start=14, margin_bottom=10, margin_top=6)
+        for label, (r, g, b) in KINDS:
+            colour = "#%02x%02x%02x" % (int(r * 255), int(g * 255), int(b * 255))
+            legend.append(Gtk.Label(use_markup=True, css_classes=["caption"],
+                                    label=f"<span foreground='{colour}'>■</span> {label}"))
+        map_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        map_box.append(self.map_area)
+        map_box.append(legend)
+
+        self.stack = Gtk.Stack(vexpand=True)
+        self.stack.add_named(sw, "list")
+        self.stack.add_named(map_box, "map")
+        self.append(self.stack)
         self.go(HOME)
 
+    # -- sort / top / view
+    def _key(self, e):
+        size = self.sizes.get(e["path"], -1)
+        if self.sort_mode == 1:
+            return (e["mtime"],)
+        if self.sort_mode == 2:
+            return (-e["mtime"],)
+        if self.sort_mode == 3:
+            return (kind_of(e["path"], e["is_dir"]), -size)
+        return (-size,)
+
+    def ordered(self):
+        """Entries in the chosen order, cut to the top N (list and map both use this)."""
+        items = sorted(self.entries, key=self._key)
+        return items[:self.top] if self.top else items
+
+    def _refresh_view(self):
+        self.visible = {e["path"] for e in self.ordered()}
+        self.list.invalidate_sort()
+        self.list.invalidate_filter()
+        self.map_area.queue_draw()
+
+    def _on_sort(self, dd, _p):
+        self.sort_mode = dd.get_selected()
+        self._refresh_view()
+
+    def _on_top(self, dd, _p):
+        self.top = TOPS[dd.get_selected()]
+        self._refresh_view()
+
+    def _on_map_toggled(self, btn):
+        self.stack.set_visible_child_name("map" if btn.get_active() else "list")
+        self.map_area.queue_draw()
+
+    def _filter(self, row):
+        return not self.top or row.path in self.visible
+
     def _sort(self, a, b):
-        sa, sb = self.sizes.get(a.path, -1), self.sizes.get(b.path, -1)
-        return (sb > sa) - (sb < sa)
+        ka = self._key({"path": a.path, "is_dir": a.is_dir, "mtime": a.mtime})
+        kb = self._key({"path": b.path, "is_dir": b.is_dir, "mtime": b.mtime})
+        return (ka > kb) - (ka < kb)
+
+    def _draw_map(self, _area, cr, width, height):
+        shown = [e for e in self.ordered() if self.sizes.get(e["path"], 0) > 0]
+        shown = sorted(shown, key=lambda e: -self.sizes[e["path"]])[:150]
+        rects = treemap_layout([self.sizes[e["path"]] for e in shown], width, height)
+        self.map_rects = []
+        cr.select_font_face("Sans")
+        cr.set_font_size(11)
+        for e, (x, y, w, h) in zip(shown, rects):
+            r, g, b = KINDS[kind_of(e["path"], e["is_dir"])][1]
+            cr.set_source_rgb(r, g, b)
+            cr.rectangle(x + 1, y + 1, max(w - 2, 0), max(h - 2, 0))
+            cr.fill()
+            if w > 64 and h > 34:
+                cr.set_source_rgb(1, 1, 1)
+                name = e["name"]
+                while len(name) > 1 and cr.text_extents(name).x_advance > w - 10:
+                    name = name[:-2] + "…" if len(name) > 2 else name[:1]
+                cr.move_to(x + 5, y + 15)
+                cr.show_text(name)
+                cr.set_font_size(10)
+                cr.move_to(x + 5, y + 28)
+                cr.show_text(fmt_size(self.sizes[e["path"]]))
+                cr.set_font_size(11)
+            self.map_rects.append((x, y, w, h, e))
+
+    def _on_map_click(self, _gesture, _n, px, py):
+        for x, y, w, h, e in self.map_rects:
+            if x <= px < x + w and y <= py < y + h:
+                if e["is_dir"]:
+                    self.go(e["path"])
+                else:
+                    show_preview(self.win, e["path"], self.confirm_trash)
+                return
 
     def set_root(self, path):
         self.root = path
@@ -479,12 +677,25 @@ class Explorer(Gtk.Box):
             return
         self.status.set_label("Measuring…")
         self.pending = len(entries)
+        self.measured = 0
         self.max_size = 1
         self.bars = []
+        self.entries = []
+        for e in entries:
+            try:
+                mtime = e.stat(follow_symlinks=False).st_mtime
+            except OSError:
+                mtime = 0
+            self.entries.append({"path": e.path, "name": e.name,
+                                 "is_dir": e.is_dir(follow_symlinks=False), "mtime": mtime})
+        self.visible = {x["path"] for x in self.entries}
         for e in entries:
             self._add_row(e)
+        self.progress.set_visible(bool(entries))
+        self.progress.set_fraction(0)
         if not entries:
             self.status.set_label("Empty folder")
+        self.map_area.queue_draw()
 
         def work():
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -507,6 +718,11 @@ class Explorer(Gtk.Box):
         row = Adw.ActionRow(title=GLib.markup_escape_text(entry.name),
                             activatable=True)
         row.path = entry.path
+        row.is_dir = is_dir
+        try:
+            row.mtime = entry.stat(follow_symlinks=False).st_mtime
+        except OSError:
+            row.mtime = 0
         row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir
                                  else "text-x-generic-symbolic"))
         row.size_label = Gtk.Label(label="…", css_classes=["dim-label"],
@@ -537,9 +753,15 @@ class Explorer(Gtk.Box):
         for row in self.bars:
             row.bar.set_value((self.sizes.get(row.path, 0)) / self.max_size)
         self.pending -= 1
-        self.list.invalidate_sort()
+        self.measured += 1
+        self._refresh_view()
         total = sum(self.sizes.values())
-        self.status.set_label(("Measuring… " if self.pending else "") + f"Total {fmt_size(total)}")
+        count = self.measured + self.pending
+        pct = self.measured * 100 // max(count, 1)
+        self.status.set_label((f"Measuring {pct}% ({self.measured} of {count} items) · " if self.pending else "")
+                              + f"Total {fmt_size(total)}")
+        self.progress.set_fraction(self.measured / max(count, 1))
+        self.progress.set_visible(self.pending > 0)
 
     def confirm_trash(self, path):
         dlg = Adw.AlertDialog(heading="Move to trash?", body=path)

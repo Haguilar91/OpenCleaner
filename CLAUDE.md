@@ -37,7 +37,7 @@ Windows already have them).
   file, size/date/location, Open, Delete/Trash); in Clean, each item with files has a Review list
   whose files open the same preview. Android: `PreviewDialog`/`ReviewDialog` in `Screens.kt`;
   macOS: `Preview.swift`; Linux: `show_preview`/`show_review`; WinForms: `PreviewForm`/`ReviewForm`;
-  WinUI: `Preview.cs`. macOS preview also plays mp4/mp3/flac (AppKit AVPlayerView; SwiftUI VideoPlayer crashes on macOS 27). Not yet compiled/run: Linux, WinForms, WinUI.
+  WinUI: `Preview.cs`. macOS preview also plays mp4/mp3/flac (AppKit AVPlayerView; SwiftUI VideoPlayer crashes on macOS 27). Disk map (treemap), sort + Top 5/10/50/100 and measuring-progress % exist in Android, macOS, Linux, WinForms and WinUI (WinForms has no media player). Not yet compiled/run: Linux, WinForms, WinUI (all of the above was written blind).
 
 - **Nothing is deleted until the user ticks items and confirms** in a dialog listing them.
 - **Every category always shows a row**: "Clean" (green) when nothing to remove, "Scan failed"

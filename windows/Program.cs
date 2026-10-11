@@ -641,6 +641,167 @@ namespace OpenCleaner
     }
 
     // ------------------------------------------------------------------ UI
+    // ------------------------------------------------------------------ disk map
+    class DiskEntry
+    {
+        public string Path;
+        public bool IsDir;
+        public DateTime Modified;
+        public long Size = -1;                 // -1 = not measured yet
+    }
+
+    // Squarified treemap layout plus the file-type colours used by the disk map.
+    static class Treemap
+    {
+        public static readonly string[] KindNames = { "Folders", "Images", "Video", "Audio", "Documents", "Archives", "Other" };
+        public static readonly Color[] KindColors =
+        {
+            Color.FromArgb(37, 99, 235), Color.FromArgb(46, 158, 91), Color.FromArgb(140, 84, 204),
+            Color.FromArgb(224, 133, 36), Color.FromArgb(26, 153, 158), Color.FromArgb(199, 69, 69),
+            Color.FromArgb(107, 117, 138)
+        };
+        static readonly string[][] KindExt =
+        {
+            null,
+            new string[] { ".jpg", ".jpeg", ".png", ".gif", ".heic", ".webp", ".bmp", ".tif", ".tiff", ".svg", ".raw", ".dng" },
+            new string[] { ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".webm", ".wmv" },
+            new string[] { ".mp3", ".flac", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".wma" },
+            new string[] { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".md", ".csv", ".rtf", ".epub" },
+            new string[] { ".zip", ".iso", ".7z", ".rar", ".tar", ".gz", ".cab", ".msi" }
+        };
+
+        // Index into KindNames / KindColors.
+        public static int KindOf(string path, bool isDir)
+        {
+            if (isDir) return 0;
+            string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+            for (int k = 1; k < KindExt.Length; k++)
+                if (Array.IndexOf(KindExt[k], ext) >= 0) return k;
+            return 6;
+        }
+
+        // sizes must be positive and sorted largest first. Returns one rectangle per size, in order.
+        public static List<RectangleF> Layout(List<double> sizes, float width, float height)
+        {
+            List<RectangleF> result = new List<RectangleF>();
+            double total = sizes.Sum();
+            if (total <= 0 || width <= 0 || height <= 0) return result;
+            double scale = (double)width * height / total;
+            List<double> areas = sizes.Select(s => s * scale).ToList();
+            double x = 0, y = 0, w = width, h = height;
+            int i = 0;
+            while (i < areas.Count)
+            {
+                double side = Math.Min(w, h);
+                int end = i + 1;
+                while (end < areas.Count && Worst(areas.GetRange(i, end + 1 - i), side) <= Worst(areas.GetRange(i, end - i), side))
+                    end++;
+                List<double> row = areas.GetRange(i, end - i);
+                double sum = row.Sum();
+                if (w >= h)                       // column on the left
+                {
+                    double cw = sum / h, cy = y;
+                    foreach (double a in row)
+                    {
+                        double ch = a / cw;
+                        result.Add(new RectangleF((float)x, (float)cy, (float)cw, (float)ch));
+                        cy += ch;
+                    }
+                    x += cw;
+                    w = Math.Max(w - cw, 0);
+                }
+                else                              // row on the top
+                {
+                    double rh = sum / w, cx = x;
+                    foreach (double a in row)
+                    {
+                        double rw = a / rh;
+                        result.Add(new RectangleF((float)cx, (float)y, (float)rw, (float)rh));
+                        cx += rw;
+                    }
+                    y += rh;
+                    h = Math.Max(h - rh, 0);
+                }
+                i = end;
+            }
+            return result;
+        }
+
+        static double Worst(List<double> row, double side)
+        {
+            double s = row.Sum(), mx = row.Max(), mn = row.Min();
+            if (s <= 0 || mn <= 0) return double.MaxValue;
+            return Math.Max(side * side * mx / (s * s), s * s / (side * side * mn));
+        }
+    }
+
+    // Draws the treemap: Items must be positive-size entries, largest first. Click a block to raise BlockClicked.
+    class MapPanel : Panel
+    {
+        public List<DiskEntry> Items = new List<DiskEntry>();
+        public event Action<DiskEntry> BlockClicked;
+        List<RectangleF> rects = new List<RectangleF>();
+
+        public MapPanel()
+        {
+            DoubleBuffered = true;
+            ResizeRedraw = true;
+            BackColor = Color.White;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(BackColor);
+            const int legendH = 28, pad = 10;
+            float w = ClientSize.Width - 2 * pad, h = ClientSize.Height - legendH - pad;
+            List<double> sizes = new List<double>();
+            foreach (DiskEntry d in Items) sizes.Add(d.Size);
+            rects = Treemap.Layout(sizes, w, h);
+            using (Font f = new Font("Segoe UI", 8.5f))
+            using (StringFormat sf = new StringFormat())
+            {
+                sf.Trimming = StringTrimming.EllipsisCharacter;
+                sf.FormatFlags = StringFormatFlags.NoWrap;
+                for (int i = 0; i < rects.Count && i < Items.Count; i++)
+                {
+                    RectangleF r = rects[i];
+                    r.Offset(pad, pad);
+                    rects[i] = r;
+                    using (SolidBrush b = new SolidBrush(Treemap.KindColors[Treemap.KindOf(Items[i].Path, Items[i].IsDir)]))
+                        g.FillRectangle(b, r.X + 1, r.Y + 1, Math.Max(r.Width - 2, 0), Math.Max(r.Height - 2, 0));
+                    if (r.Width > 64 && r.Height > 34)
+                    {
+                        string name = System.IO.Path.GetFileName(Items[i].Path);
+                        g.DrawString(name, f, Brushes.White, new RectangleF(r.X + 5, r.Y + 4, r.Width - 10, 16), sf);
+                        g.DrawString(Util.Fmt(Items[i].Size), f, Brushes.WhiteSmoke, new RectangleF(r.X + 5, r.Y + 19, r.Width - 10, 16), sf);
+                    }
+                }
+                float lx = pad;
+                for (int k = 0; k < Treemap.KindNames.Length; k++)
+                {
+                    using (SolidBrush b = new SolidBrush(Treemap.KindColors[k]))
+                        g.FillRectangle(b, lx, ClientSize.Height - legendH + 6, 10, 10);
+                    g.DrawString(Treemap.KindNames[k], f, Brushes.DimGray, lx + 14, ClientSize.Height - legendH + 3);
+                    lx += 14 + g.MeasureString(Treemap.KindNames[k], f).Width + 8;
+                }
+            }
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+            for (int i = 0; i < rects.Count && i < Items.Count; i++)
+            {
+                if (rects[i].Contains(e.Location))
+                {
+                    if (BlockClicked != null) BlockClicked(Items[i]);
+                    return;
+                }
+            }
+        }
+    }
+
     class SizeComparer : System.Collections.IComparer
     {
         public int Compare(object a, object b)
@@ -874,6 +1035,14 @@ namespace OpenCleaner
         long totalSize;
         int pending;
         DateTime lastSort = DateTime.MinValue;
+        List<DiskEntry> disk = new List<DiskEntry>();
+        Dictionary<string, DiskEntry> diskByPath = new Dictionary<string, DiskEntry>();
+        ComboBox sortBox = new ComboBox(), topBox = new ComboBox();
+        CheckBox mapBtn = new CheckBox();
+        ProgressBar diskProgress = new ProgressBar();
+        MapPanel mapPanel = new MapPanel();
+        int measured, itemCount;
+        static readonly int[] TopCounts = { 0, 5, 10, 50, 100 };     // 0 = all
 
         public MainForm()
         {
@@ -1218,16 +1387,44 @@ namespace OpenCleaner
                 int w = diskList.ClientSize.Width - S(90) - S(130) - 4;
                 if (w > S(150)) diskList.Columns[0].Width = w;
             };
-            diskList.ListViewItemSorter = new SizeComparer();
             diskList.DoubleClick += delegate
             {
                 if (diskList.SelectedItems.Count == 0) return;
-                string p = diskList.SelectedItems[0].Name;
-                if (Util.IsDir(p)) LoadDisk(p);
-                else if (File.Exists(p) && PreviewForm.Ask(this, p, true)
-                    && MessageBox.Show(this, p, "Move to Recycle Bin?", MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Question) == DialogResult.Yes) TrashPath(p);
+                OpenDiskItem(diskList.SelectedItems[0].Name);
             };
+
+            // sort, top N and the disk map toggle
+            Panel tools = new Panel();
+            tools.Dock = DockStyle.Top; tools.Height = 38;
+            Label sortLabel = new Label(); sortLabel.Text = "Sort:"; sortLabel.SetBounds(10, 11, 34, 20);
+            sortBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            sortBox.Items.AddRange(new object[] { "Biggest first", "Oldest first", "Newest first", "File type" });
+            sortBox.SelectedIndex = 0; sortBox.SetBounds(46, 8, 120, 28);
+            Label topLabel = new Label(); topLabel.Text = "Show:"; topLabel.SetBounds(180, 11, 40, 20);
+            topBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            topBox.Items.AddRange(new object[] { "All", "Top 5", "Top 10", "Top 50", "Top 100" });
+            topBox.SelectedIndex = 0; topBox.SetBounds(222, 8, 80, 28);
+            sortBox.SelectedIndexChanged += delegate { RefreshDisk(); };
+            topBox.SelectedIndexChanged += delegate { RefreshDisk(); };
+            mapBtn.Appearance = Appearance.Button; mapBtn.Text = "Disk map";
+            mapBtn.TextAlign = ContentAlignment.MiddleCenter;
+            mapBtn.SetBounds(316, 6, 90, 28);
+            mapBtn.CheckedChanged += delegate
+            {
+                diskList.Visible = !mapBtn.Checked;
+                mapPanel.Visible = mapBtn.Checked;
+                RefreshDisk();
+            };
+            diskProgress.SetBounds(420, 11, 300, 16);
+            diskProgress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            diskProgress.Visible = false;
+            tools.Controls.Add(sortLabel); tools.Controls.Add(sortBox);
+            tools.Controls.Add(topLabel); tools.Controls.Add(topBox);
+            tools.Controls.Add(mapBtn); tools.Controls.Add(diskProgress);
+
+            mapPanel.Dock = DockStyle.Fill;
+            mapPanel.Visible = false;
+            mapPanel.BlockClicked += delegate(DiskEntry d) { OpenDiskItem(d.Path); };
 
             Panel bottom = new Panel();
             bottom.Dock = DockStyle.Bottom; bottom.Height = 44;
@@ -1239,9 +1436,12 @@ namespace OpenCleaner
             bottom.Controls.Add(trashBtn); bottom.Controls.Add(diskStatus);
 
             page.Controls.Add(diskList);
+            page.Controls.Add(mapPanel);
+            page.Controls.Add(tools);
             page.Controls.Add(top);
             page.Controls.Add(bottom);
             diskList.BringToFront();
+            mapPanel.BringToFront();
 
             root = Util.Env("USERPROFILE");
         }
@@ -1253,22 +1453,26 @@ namespace OpenCleaner
             pathLabel.Text = path;
             upBtn.Enabled = Path.GetDirectoryName(path.TrimEnd('\\')) != null;
             int myGen = ++gen;
-            diskList.BeginUpdate();
-            diskList.Items.Clear();
             List<string> entries = Util.Children(path);
+            disk.Clear();
+            diskByPath.Clear();
             foreach (string e in entries)
             {
-                bool dir = Util.IsDir(e);
-                ListViewItem lvi = new ListViewItem(Path.GetFileName(e));
-                lvi.Name = e;
-                lvi.Tag = -1L;
-                lvi.SubItems.Add(dir ? "Folder" : "File");
-                lvi.SubItems.Add("...");
-                diskList.Items.Add(lvi);
+                DiskEntry d = new DiskEntry();
+                d.Path = e;
+                d.IsDir = Util.IsDir(e);
+                try { d.Modified = d.IsDir ? Directory.GetLastWriteTime(e) : File.GetLastWriteTime(e); }
+                catch (Exception) { d.Modified = DateTime.MinValue; }
+                disk.Add(d);
+                diskByPath[e] = d;
             }
-            diskList.EndUpdate();
             totalSize = 0; pending = entries.Count;
-            diskStatus.Text = entries.Count == 0 ? "Empty folder" : "Measuring...";
+            measured = 0; itemCount = entries.Count;
+            diskProgress.Maximum = Math.Max(itemCount, 1);
+            diskProgress.Value = 0;
+            diskProgress.Visible = itemCount > 0;
+            diskStatus.Text = entries.Count == 0 ? "Empty folder" : "Measuring 0% (0 of " + itemCount + " items)";
+            RefreshDisk();
 
             if (entries.Count == 0) return;
             Task.Run(() =>
@@ -1284,21 +1488,81 @@ namespace OpenCleaner
 
         void SetSize(int myGen, string path, long size)
         {
-            if (myGen != gen) return;
-            ListViewItem[] found = diskList.Items.Find(path, false);
-            if (found.Length > 0)
-            {
-                found[0].Tag = size;
-                found[0].SubItems[2].Text = Util.Fmt(size);
-            }
+            DiskEntry d;
+            if (myGen != gen || !diskByPath.TryGetValue(path, out d)) return;
+            d.Size = size;
             totalSize += size;
             pending--;
+            measured++;
             if (pending == 0 || (DateTime.Now - lastSort).TotalMilliseconds > 400)
             {
-                diskList.Sort();
+                RefreshDisk();
                 lastSort = DateTime.Now;
             }
-            diskStatus.Text = (pending > 0 ? "Measuring...  " : "") + "Total " + Util.Fmt(totalSize);
+            int pct = itemCount == 0 ? 100 : measured * 100 / itemCount;
+            diskStatus.Text = (pending > 0 ? "Measuring " + pct + "% (" + measured + " of " + itemCount + " items)  |  " : "")
+                              + "Total " + Util.Fmt(totalSize);
+            diskProgress.Value = Math.Min(measured, diskProgress.Maximum);
+            diskProgress.Visible = pending > 0;
+        }
+
+        // Entries in the chosen order, cut to the top N (list and map both use this).
+        List<DiskEntry> Ordered()
+        {
+            List<DiskEntry> list = new List<DiskEntry>(disk);
+            switch (sortBox.SelectedIndex)
+            {
+                case 1: list.Sort((a, b) => a.Modified.CompareTo(b.Modified)); break;
+                case 2: list.Sort((a, b) => b.Modified.CompareTo(a.Modified)); break;
+                case 3:
+                    list.Sort((a, b) =>
+                    {
+                        int ka = Treemap.KindOf(a.Path, a.IsDir), kb = Treemap.KindOf(b.Path, b.IsDir);
+                        return ka != kb ? ka.CompareTo(kb) : b.Size.CompareTo(a.Size);
+                    });
+                    break;
+                default: list.Sort((a, b) => b.Size.CompareTo(a.Size)); break;
+            }
+            int n = TopCounts[topBox.SelectedIndex < 0 ? 0 : topBox.SelectedIndex];
+            if (n > 0 && list.Count > n) list = list.GetRange(0, n);
+            return list;
+        }
+
+        void RefreshDisk()
+        {
+            List<DiskEntry> ordered = Ordered();
+            string keep = diskList.SelectedItems.Count > 0 ? diskList.SelectedItems[0].Name : null;
+            diskList.BeginUpdate();
+            diskList.Items.Clear();
+            foreach (DiskEntry d in ordered)
+            {
+                string name = Path.GetFileName(d.Path);
+                ListViewItem lvi = new ListViewItem(string.IsNullOrEmpty(name) ? d.Path : name);
+                lvi.Name = d.Path;
+                lvi.Tag = d.Size;
+                lvi.SubItems.Add(d.IsDir ? "Folder" : "File");
+                lvi.SubItems.Add(d.Size < 0 ? "..." : Util.Fmt(d.Size));
+                diskList.Items.Add(lvi);
+                if (d.Path == keep) lvi.Selected = true;
+            }
+            diskList.EndUpdate();
+
+            // the map draws the same selection, largest first, at most 150 blocks
+            List<DiskEntry> shown = new List<DiskEntry>();
+            foreach (DiskEntry d in ordered) if (d.Size > 0) shown.Add(d);
+            shown.Sort((a, b) => b.Size.CompareTo(a.Size));
+            if (shown.Count > 150) shown = shown.GetRange(0, 150);
+            mapPanel.Items = shown;
+            mapPanel.Invalidate();
+        }
+
+        // Folder: open it. File: preview it, with a Recycle Bin option.
+        void OpenDiskItem(string p)
+        {
+            if (Util.IsDir(p)) { LoadDisk(p); return; }
+            if (File.Exists(p) && PreviewForm.Ask(this, p, true)
+                && MessageBox.Show(this, p, "Move to Recycle Bin?", MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) == DialogResult.Yes) TrashPath(p);
         }
 
         void OnTrash(object sender, EventArgs e)

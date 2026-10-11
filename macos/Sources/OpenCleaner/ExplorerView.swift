@@ -5,6 +5,12 @@ struct Entry: Identifiable {
     var name: String
     var isDir: Bool
     var size: Int64?
+    var modified: Date?
+}
+
+enum SortMode: String, CaseIterable, Identifiable {
+    case size = "Biggest first", oldest = "Oldest first", newest = "Newest first", type = "File type"
+    var id: String { rawValue }
 }
 
 @MainActor
@@ -13,19 +19,41 @@ final class ExplorerModel: ObservableObject {
     @Published var path = URL(fileURLWithPath: home)
     @Published var entries: [Entry] = []
     @Published var measuring = false
+    @Published var measured = 0
+    @Published var itemCount = 0
     @Published var error: String?
     @Published var toTrash: URL?
     @Published var preview: URL?
+    @Published var mapMode = false
+    @Published var sort = SortMode.size
+    @Published var topN = 0          // 0 = show all
     private var gen = 0
 
     var total: Int64 { entries.reduce(0) { $0 + ($1.size ?? 0) } }
-    var maxSize: Int64 { max(entries.compactMap(\.size).max() ?? 1, 1) }
+    var maxSize: Int64 { max(visible.compactMap(\.size).max() ?? 1, 1) }
+
+    /// Entries in the chosen order, cut to the top N (list and map both use this).
+    var visible: [Entry] {
+        var list = entries
+        switch sort {
+        case .size: list.sort { ($0.size ?? -1) > ($1.size ?? -1) }
+        case .oldest: list.sort { ($0.modified ?? .distantFuture) < ($1.modified ?? .distantFuture) }
+        case .newest: list.sort { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
+        case .type:
+            list.sort { a, b in
+                let ka = Kind.of(a).order, kb = Kind.of(b).order
+                return ka != kb ? ka < kb : (a.size ?? -1) > (b.size ?? -1)
+            }
+        }
+        return topN > 0 ? Array(list.prefix(topN)) : list
+    }
     var statusText: String {
-        var s = measuring ? "Measuring… " : ""
+        var s = measuring ? "Measuring \(percent)% (\(measured) of \(itemCount) items) \u{00B7} " : ""
         s += "Total \(fmt(total))"
         if let e = error { s += " · \(e)" }
         return s
     }
+    var percent: Int { itemCount == 0 ? 100 : min(100, measured * 100 / itemCount) }
     var canGoUp: Bool { path.standardizedFileURL.path != root.standardizedFileURL.path }
 
     func setRoot(_ url: URL) { root = url; go(url) }
@@ -37,8 +65,13 @@ final class ExplorerModel: ObservableObject {
         gen += 1
         let g = gen
         let urls = FS.children(url)
-        entries = urls.map { Entry(id: $0, name: $0.lastPathComponent, isDir: FS.isRealDir($0)) }
+        entries = urls.map {
+            Entry(id: $0, name: $0.lastPathComponent, isDir: FS.isRealDir($0),
+                  modified: (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate)
+        }
         error = nil
+        measured = 0
+        itemCount = urls.count
         guard !urls.isEmpty else { measuring = false; return }
         measuring = true
         Task.detached { [weak self] in
@@ -57,7 +90,7 @@ final class ExplorerModel: ObservableObject {
     private func setSize(_ g: Int, _ url: URL, _ size: Int64) {
         guard g == gen, let i = entries.firstIndex(where: { $0.id == url }) else { return }
         entries[i].size = size
-        entries.sort { ($0.size ?? -1) > ($1.size ?? -1) }
+        measured += 1
     }
 
     private func finish(_ g: Int) { if g == gen { measuring = false } }
@@ -86,22 +119,45 @@ struct ExplorerView: View {
                 Text(model.path.path)
                     .lineLimit(1).truncationMode(.head).foregroundStyle(.secondary)
                 Spacer()
+                Picker("Sort", selection: $model.sort) {
+                    ForEach(SortMode.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.menu).frame(width: 140).help("Sort by size, age or type")
+                Picker("Show", selection: $model.topN) {
+                    Text("All").tag(0)
+                    ForEach([5, 10, 50, 100], id: \.self) { Text("Top \($0)").tag($0) }
+                }
+                .pickerStyle(.menu).frame(width: 100).help("Show only the first items of the sort")
+                Picker("", selection: $model.mapMode) {
+                    Image(systemName: "list.bullet").tag(false)
+                    Image(systemName: "square.grid.2x2").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 80)
+                .help("List or map")
             }
             .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 4)
             Text(model.statusText)
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 28).padding(.bottom, 8)
+                .padding(.horizontal, 28).padding(.bottom, model.measuring ? 4 : 8)
+            if model.measuring {
+                ProgressView(value: Double(model.measured), total: Double(max(model.itemCount, 1)))
+                    .padding(.horizontal, 28).padding(.bottom, 8)
+            }
+            if model.mapMode {
+                MapView(model: model)
+            } else {
             ScrollView {
                 Card {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { i, e in
+                        ForEach(Array(model.visible.enumerated()), id: \.element.id) { i, e in
                             if i > 0 { Divider() }
                             row(e)
                         }
                     }
                 }
                 .padding(.horizontal, 24).padding(.bottom, 16)
+            }
             }
         }
         .onAppear { if model.entries.isEmpty { model.reload() } }

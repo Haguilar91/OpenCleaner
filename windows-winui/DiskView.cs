@@ -1,5 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Text;
 
 namespace OpenCleaner;
 
@@ -13,7 +16,12 @@ public sealed class DiskView : UserControl
         public Grid View;
         public TextBlock SizeText;
         public ProgressBar Bar;
+        public bool IsDir;
+        public DateTime Modified;
     }
+
+    private static readonly string[] SortNames = { "Biggest first", "Oldest first", "Newest first", "File type" };
+    private static readonly int[] TopChoices = { 0, 5, 10, 50, 100 };   // 0 = all
 
     private readonly Action freeChanged;
     private readonly StackPanel list = new() { Spacing = 4, Margin = new Thickness(24, 4, 24, 16) };
@@ -39,6 +47,18 @@ public sealed class DiskView : UserControl
     private long maxSize = 1;
     private DateTime lastSort = DateTime.MinValue;
     private bool started;
+    private int measured;
+    private int itemCount;
+    private int sortMode;
+    private int topN;
+    private bool mapMode;
+    private readonly ComboBox sortBox = new() { MinWidth = 140 };
+    private readonly ComboBox topBox = new() { MinWidth = 90 };
+    private readonly ToggleButton mapBtn = new() { Content = new FontIcon { Glyph = "\uE80A" } };
+    private readonly ProgressBar progress = new() { Margin = new Thickness(26, 0, 26, 6), Visibility = Visibility.Collapsed };
+    private readonly Canvas mapCanvas = new() { Margin = new Thickness(24, 0, 24, 4) };
+    private readonly ScrollViewer scroll = new();
+    private readonly Grid mapPanel = new() { Visibility = Visibility.Collapsed };
 
     public DiskView(Action freeChanged)
     {
@@ -72,6 +92,32 @@ public sealed class DiskView : UserControl
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        foreach (string n in SortNames) sortBox.Items.Add(n);
+        sortBox.SelectedIndex = 0;
+        sortBox.SelectionChanged += (_, _) => { sortMode = Math.Max(sortBox.SelectedIndex, 0); Resort(); };
+        topBox.Items.Add("All");
+        for (int k = 1; k < TopChoices.Length; k++) topBox.Items.Add("Top " + TopChoices[k]);
+        topBox.SelectedIndex = 0;
+        topBox.SelectionChanged += (_, _) => { topN = TopChoices[Math.Max(topBox.SelectedIndex, 0)]; Resort(); };
+        ToolTipService.SetToolTip(sortBox, "Sort by size, age or type");
+        ToolTipService.SetToolTip(topBox, "Show only the first items of the sort");
+        ToolTipService.SetToolTip(mapBtn, "Disk map");
+        mapBtn.Click += (_, _) =>
+        {
+            mapMode = mapBtn.IsChecked == true;
+            scroll.Visibility = mapMode ? Visibility.Collapsed : Visibility.Visible;
+            mapPanel.Visibility = mapMode ? Visibility.Visible : Visibility.Collapsed;
+            DrawMap();
+        };
+        Grid.SetColumn(sortBox, 4);
+        Grid.SetColumn(topBox, 5);
+        Grid.SetColumn(mapBtn, 6);
+        top.Children.Add(sortBox);
+        top.Children.Add(topBox);
+        top.Children.Add(mapBtn);
         Grid.SetColumn(homeBtn, 1);
         Grid.SetColumn(driveBox, 2);
         Grid.SetColumn(pathText, 3);
@@ -83,13 +129,35 @@ public sealed class DiskView : UserControl
         var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(status, 1);
-        var scroll = new ScrollViewer { Content = list };
-        Grid.SetRow(scroll, 2);
+        Grid.SetRow(progress, 2);
+        scroll.Content = list;
+        Grid.SetRow(scroll, 3);
+        Grid.SetRow(mapPanel, 3);
+
+        // disk map: colored blocks sized by space; click a folder to open it, a file to preview it
+        var legend = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, Margin = new Thickness(26, 4, 0, 10) };
+        foreach (var (label, color) in Treemap.Kinds)
+        {
+            var item = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+            item.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center });
+            item.Children.Add(new TextBlock { Text = label, Style = Ui.Sty("CaptionTextBlockStyle"), Foreground = Ui.Res("TextFillColorSecondaryBrush") });
+            legend.Children.Add(item);
+        }
+        mapPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        mapPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetRow(legend, 1);
+        mapPanel.Children.Add(mapCanvas);
+        mapPanel.Children.Add(legend);
+        mapCanvas.SizeChanged += (_, _) => DrawMap();
+
         grid.Children.Add(top);
         grid.Children.Add(status);
+        grid.Children.Add(progress);
         grid.Children.Add(scroll);
+        grid.Children.Add(mapPanel);
         Content = grid;
 
         Loaded += (_, _) =>
@@ -113,9 +181,14 @@ public sealed class DiskView : UserControl
         list.Children.Clear();
         total = 0;
         maxSize = 1;
+        measured = 0;
 
         var entries = Util.Children(path);
         pending = entries.Count;
+        itemCount = entries.Count;
+        progress.Value = 0;
+        progress.Visibility = entries.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        mapCanvas.Children.Clear();
         foreach (string e in entries)
         {
             var r = MakeRow(e);
@@ -123,7 +196,8 @@ public sealed class DiskView : UserControl
             byPath[e] = r;
             list.Children.Add(r.View);
         }
-        status.Text = entries.Count == 0 ? "Empty folder" : "Measuring...";
+        Resort();
+        status.Text = entries.Count == 0 ? "Empty folder" : "Measuring 0% (0 of " + entries.Count + " items)";
         if (entries.Count == 0) return;
 
         var dq = DispatcherQueue;
@@ -138,7 +212,9 @@ public sealed class DiskView : UserControl
     private Row MakeRow(string fullPath)
     {
         bool dir = Util.IsDir(fullPath);
-        var r = new Row { FullPath = fullPath };
+        var r = new Row { FullPath = fullPath, IsDir = dir };
+        try { r.Modified = dir ? Directory.GetLastWriteTime(fullPath) : File.GetLastWriteTime(fullPath); }
+        catch (Exception) { r.Modified = DateTime.MinValue; }
         string name = Path.GetFileName(fullPath);
         if (string.IsNullOrEmpty(name)) name = fullPath;
 
@@ -213,21 +289,89 @@ public sealed class DiskView : UserControl
         total += size;
         maxSize = Math.Max(maxSize, size);
         pending--;
+        measured++;
         if (pending == 0 || (DateTime.Now - lastSort).TotalMilliseconds > 400) Resort();
-        status.Text = (pending > 0 ? "Measuring...  " : "") + "Total " + Util.Fmt(total);
+        int pct = itemCount == 0 ? 100 : measured * 100 / itemCount;
+        status.Text = (pending > 0 ? $"Measuring {pct}% ({measured} of {itemCount} items)  |  " : "") + "Total " + Util.Fmt(total);
+        progress.Maximum = Math.Max(itemCount, 1);
+        progress.Value = measured;
+        progress.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Rows in the chosen order, cut to the top N (list and map both use this).</summary>
+    private List<Row> Ordered()
+    {
+        IEnumerable<Row> q;
+        switch (sortMode)
+        {
+            case 1: q = rows.OrderBy(r => r.Modified); break;
+            case 2: q = rows.OrderByDescending(r => r.Modified); break;
+            case 3: q = rows.OrderBy(r => Treemap.KindOf(r.FullPath, r.IsDir)).ThenByDescending(r => r.Size); break;
+            default: q = rows.OrderByDescending(r => r.Size); break;
+        }
+        return (topN > 0 ? q.Take(topN) : q).ToList();
+    }
+
+    private void DrawMap()
+    {
+        mapCanvas.Children.Clear();
+        if (!mapMode || mapCanvas.ActualWidth <= 0 || mapCanvas.ActualHeight <= 0) return;
+        var shown = Ordered().Where(r => r.Size > 0).OrderByDescending(r => r.Size).Take(150).ToList();
+        var rects = Treemap.Layout(shown.Select(r => (double)r.Size).ToList(), mapCanvas.ActualWidth, mapCanvas.ActualHeight);
+        for (int i = 0; i < shown.Count && i < rects.Count; i++)
+        {
+            var r = shown[i];
+            var (x, y, w, h) = rects[i];
+            var color = Treemap.Kinds[Treemap.KindOf(r.FullPath, r.IsDir)].Color;
+            var block = new Border
+            {
+                Width = Math.Max(w - 2, 0),
+                Height = Math.Max(h - 2, 0),
+                CornerRadius = new CornerRadius(3),
+                Background = new SolidColorBrush(color),
+                Padding = new Thickness(5, 3, 3, 3),
+            };
+            if (w > 64 && h > 34)
+            {
+                var text = new StackPanel();
+                text.Children.Add(new TextBlock
+                {
+                    Text = Path.GetFileName(r.FullPath),
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                });
+                text.Children.Add(new TextBlock { Text = Util.Fmt(r.Size), FontSize = 11, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), Opacity = 0.85 });
+                block.Child = text;
+            }
+            ToolTipService.SetToolTip(block, Path.GetFileName(r.FullPath) + "  |  " + Util.Fmt(r.Size));
+            string path = r.FullPath;
+            bool dir = r.IsDir;
+            block.Tapped += async (_, _) =>
+            {
+                if (dir) Load(path);
+                else if (await Preview.Show(XamlRoot, path, true)) await RecycleAsync(path);
+            };
+            Canvas.SetLeft(block, x + 1);
+            Canvas.SetTop(block, y + 1);
+            mapCanvas.Children.Add(block);
+        }
     }
 
     private void Resort()
     {
-        rows.Sort((a, b) => b.Size.CompareTo(a.Size));
+        var ordered = Ordered();
+        long visibleMax = Math.Max(ordered.Count == 0 ? 1 : ordered.Max(r => r.Size), 1);
         list.Children.Clear();
-        foreach (Row r in rows)
+        foreach (Row r in ordered)
         {
             list.Children.Add(r.View);
-            r.Bar.Maximum = Math.Max(maxSize, 1);
+            r.Bar.Maximum = visibleMax;
             r.Bar.Value = Math.Max(r.Size, 0);
         }
         lastSort = DateTime.Now;
+        DrawMap();
     }
 
     private async Task RecycleAsync(string path)

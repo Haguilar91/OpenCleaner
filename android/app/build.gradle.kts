@@ -12,8 +12,8 @@ android {
         applicationId = "com.opencleaner.android"
         minSdk = 30
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 9
+        versionName = "1.8"
     }
 
     buildTypes {

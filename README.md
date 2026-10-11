@@ -5,17 +5,42 @@
 Open-source disk cleaners for **Linux (CachyOS/Arch)**, **macOS**, **Windows** and **Android**.
 Each one scans for reclaimable space, shows what it found with sizes, and deletes only what
 you tick and confirm. Every category always shows a row, with **Clean ✓** when there is
-nothing to remove, plus a disk-usage browser to find what is really taking space.
+nothing to remove, plus a disk-usage browser to find what is really taking space, with a
+**preview of any file before you decide to delete it**.
 
 | Folder | App | Run it |
 |---|---|---|
 | `linux-cachyos/` | OpenCleaner for Linux (GTK4 + libadwaita, Python) | `python3 linux-cachyos/opencleaner.py`, or build a single-file executable with everything bundled (~100 MB): `linux-cachyos/build_binary.sh` |
 | `macos/` | OpenCleaner for macOS (SwiftUI) | on a Mac: `cd macos && ./build_app.sh` |
 | `windows/` | OpenCleaner for Windows (C# WinForms) | on Windows: double-click `windows/build.bat`, then `OpenCleaner.exe` |
-| `windows-winui/` | OpenCleaner for Windows, modern WinUI 3 look (needs .NET 8 SDK) | on Windows: `windows-winui\build.bat`, then `publish\OpenCleaner.exe` |
+| `windows-winui/` | OpenCleaner for Windows, modern WinUI 3 look (needs .NET 8 SDK) | on Windows: `windows-winui\build.bat`, then `publish\win-x64\OpenCleaner.exe` |
+| `installer/` | Windows installer (Inno Setup) for the WinUI app: x64, arm64 or x86 | on Windows: `installer\build_installer.bat`, then `dist\OpenCleaner-Setup-<arch>.exe` (see [installer/README.md](installer/README.md)) |
 | `android/` | OpenCleaner for Android (Kotlin + Compose) | build with Android Studio or `gradle assembleDebug`, then install the APK |
 
+## Features
+
+| | Android | macOS | Linux | Windows |
+|---|:-:|:-:|:-:|:-:|
+| Scan, review sizes, tick, confirm, clean | yes | yes | yes | yes |
+| Disk-usage browser | yes | yes | yes | yes |
+| **Preview a file before deleting** (image, text, details, Open with, Delete / Trash) | yes | yes | yes* | yes* |
+| **Review** the files inside a Clean item before ticking it | yes | yes | yes* | yes* |
+| **Built-in player** for mp4, mp3, flac and more | yes | yes | yes* (GStreamer) | WinUI yes*, WinForms no (Open launches your player) |
+| **Disk map** (WinDirStat-style treemap, click to drill down) | yes | yes | yes* | yes* |
+| **Sort** by size, oldest, newest or file type, and show the **Top** 5 / 10 / 50 / 100 | yes | yes | yes* | yes* |
+| Progress percentage while sizes are measured | yes | yes | yes* | yes* |
+
+\* written but not yet built or run on that platform; see Status.
+
+How the disk map works: it draws the current folder as colored blocks sized by space (folders,
+images, video, audio, documents, archives, other). Click a folder to open it, click a file to
+preview it. Sort and Top apply to both the list and the map, so "Oldest first + Top 10" shows
+the 10 oldest items.
+
 ## Screenshots
+
+Screenshots were taken before some of the newer features (preview, map, sort) and the new
+branding were added.
 
 Linux (`linux-cachyos/`):
 
@@ -76,11 +101,18 @@ Windows, WinForms (`windows/`):
 
 | App | Status |
 |---|---|
-| Linux | Run and tested on CachyOS (GNOME) |
-| macOS | Builds on a Mac (macOS 13+); cleaning flows not fully tested yet |
-| Windows (WinForms) | Runs and scans on Windows 11; cleaning not fully tested yet |
-| Windows (WinUI 3) | Builds and runs on Windows 11; cleaning not fully tested yet |
-| Android | Runs on a Pixel; features work |
+| Linux | Run and tested on CachyOS (GNOME) before the newer changes; preview, player, map, sort and branding are written but not yet run |
+| macOS | Builds and runs on macOS 13+: preview, player and map tried; sort / Top and the progress percentage are new and untried; cleaning flows not fully tested yet |
+| Windows (WinForms) | Runs and scans on Windows 11; preview, map and sort are written but not yet built or tested; cleaning not fully tested yet |
+| Windows (WinUI 3) | Builds, installs and runs on Windows 11 (ARM64 VM); preview, player, map and sort are written after that build and not yet tested; cleaning not fully tested yet |
+| Windows installer | Builds with Inno Setup and installs on Windows 11 (ARM64 VM); only one architecture has been tried, the others not yet; unsigned, so SmartScreen warns |
+| Android | Runs on a Pixel: preview, player and map tried; sort / Top and the progress percentage are new and untried |
+
+## Branding
+
+New icon (a silver hard disk with a blue sweep), colors (Trust Blue `#2563EB`) and the Ubuntu
+font. Source files and rules are in [docs/brand/](docs/brand/README.md); the app icons are
+generated from those SVGs. UI icons on Android are [Lucide](https://lucide.dev) (ISC).
 
 Use at your own risk and read the confirmation list before cleaning. Bug reports and pull
 requests welcome.

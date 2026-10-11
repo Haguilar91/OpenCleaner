@@ -5,8 +5,8 @@ Kotlin + Jetpack Compose. Same idea as the desktop apps, within what Android all
 
 | Tab | What it does |
 |---|---|
-| Clean | OpenCleaner's own cache, thumbnail leftovers, old APKs in Downloads, WhatsApp sent-media copies, files over 100 MB. Every category always shows a row, with **Clean ✓** when empty. |
-| Storage | Browse internal storage by size, tap a file to preview it (images, video thumbnails, text) or open it in another app, and delete items (permanent: Android has no trash for files). |
+| Clean | OpenCleaner's own cache, thumbnail leftovers, old APKs in Downloads, WhatsApp sent-media copies, files over 100 MB. Every category always shows a row, with **Clean ✓** when empty. The eye button on a row (**Review**) lists its files, and tapping one previews it before you tick the item. |
+| Storage | Browse internal storage as a **list** or a **disk map** (colored treemap, tap a block to open a folder or preview a file). **Sort** by biggest, oldest, newest or file type, and show **Top** 5 / 10 / 50 / 100 or all. A percentage shows while sizes are measured. Tap a file to preview it (images, text, details), **play mp4 / mp3 / flac and other video and audio** in the built-in player, open it in another app, or delete it (permanent: Android has no trash for files). |
 | Apps | Every app ranked by size with its cache size. Tap one to open its Android settings page, where you can clear its cache or uninstall. |
 
 Nothing is deleted until you tick items and confirm. Deletes are limited to shared storage and
@@ -31,7 +31,7 @@ Requires Android 11 (API 30) or newer.
 
 ## Status
 
-Compiles. Not yet tested on a device.
+Builds and runs on a Pixel (version 1.8). Preview, player and map have been tried; sort / Top and the progress percentage are new and untried. Playback depends on the codecs the phone supports.
 
 ## Icons
 

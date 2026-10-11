@@ -9,6 +9,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.ThumbnailUtils
 import android.net.Uri
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.VideoView
 import android.util.Size
 import android.webkit.MimeTypeMap
 import android.os.Process
@@ -17,6 +20,16 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -40,6 +53,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +62,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Slider
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -194,7 +211,25 @@ private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
 }
 
 // ---------------------------------------------------------------- storage browser
-private data class Entry(val file: File, val size: Long?)
+private data class Entry(val file: File, val size: Long?, val modified: Long = file.lastModified())
+
+private enum class SortMode(val label: String) {
+    Biggest("Biggest first"), Oldest("Oldest first"), Newest("Newest first"), Type("File type")
+}
+
+private val TOP_CHOICES = listOf(0, 5, 10, 50, 100)   // 0 = all
+
+/** Entries in the chosen order, cut to the top N (list and map both use this). */
+private fun arrange(entries: List<Entry>, sort: SortMode, top: Int): List<Entry> {
+    val sorted = when (sort) {
+        SortMode.Biggest -> entries.sortedByDescending { it.size ?: -1 }
+        SortMode.Oldest -> entries.sortedBy { it.modified }
+        SortMode.Newest -> entries.sortedByDescending { it.modified }
+        SortMode.Type -> entries.sortedWith(
+            compareBy<Entry> { Kind.of(it.file).ordinal }.thenByDescending { it.size ?: -1 })
+    }
+    return if (top > 0) sorted.take(top) else sorted
+}
 
 @Composable
 fun StorageScreen(onChanged: () -> Unit) {
@@ -206,6 +241,9 @@ fun StorageScreen(onChanged: () -> Unit) {
     var toDelete by remember { mutableStateOf<File?>(null) }
     var preview by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var mapMode by remember { mutableStateOf(false) }
+    var sort by remember { mutableStateOf(SortMode.Biggest) }
+    var top by remember { mutableIntStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     BackHandler(enabled = path != root) { path = path.parentFile ?: root }
@@ -221,7 +259,6 @@ fun StorageScreen(onChanged: () -> Unit) {
                         val s = Scanners.size(f)
                         withContext(Dispatchers.Main) {
                             entries = entries.map { if (it.file == f) it.copy(size = s) else it }
-                                .sortedByDescending { it.size ?: -1 }
                         }
                     }
                 }
@@ -230,7 +267,11 @@ fun StorageScreen(onChanged: () -> Unit) {
     }
 
     val total = entries.sumOf { it.size ?: 0 }
-    val maxSize = (entries.maxOfOrNull { it.size ?: 0 } ?: 1).coerceAtLeast(1)
+    val measured = entries.count { it.size != null }
+    val measuring = measured < entries.size
+    val percent = if (entries.isEmpty()) 100 else measured * 100 / entries.size
+    val visible = arrange(entries, sort, top)
+    val maxSize = (visible.maxOfOrNull { it.size ?: 0 } ?: 1).coerceAtLeast(1)
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -238,13 +279,45 @@ fun StorageScreen(onChanged: () -> Unit) {
             Text(path.path.removePrefix(root.path).ifEmpty { "/" }.let { "Internal storage$it" },
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            IconButton(onClick = { mapMode = !mapMode }) {
+                Ico(if (mapMode) R.drawable.ic_list else R.drawable.ic_map, if (mapMode) "List view" else "Map view")
+            }
         }
-        Text("Total ${fmt(total)}", style = MaterialTheme.typography.bodySmall,
+        Text((if (measuring) "Measuring $percent% ($measured of ${entries.size} items) · " else "") +
+            "Total ${fmt(total)}", style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (measuring) {
+            LinearProgressIndicator(progress = { measured.toFloat() / entries.size },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp))
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            var sortOpen by remember { mutableStateOf(false) }
+            var topOpen by remember { mutableStateOf(false) }
+            Box {
+                TextButton(onClick = { sortOpen = true }) { Text("Sort: ${sort.label} ▾") }
+                DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                    SortMode.values().forEach { m ->
+                        DropdownMenuItem(text = { Text(m.label) }, onClick = { sort = m; sortOpen = false })
+                    }
+                }
+            }
+            Box {
+                TextButton(onClick = { topOpen = true }) { Text("Show: ${if (top == 0) "All" else "Top $top"} ▾") }
+                DropdownMenu(expanded = topOpen, onDismissRequest = { topOpen = false }) {
+                    TOP_CHOICES.forEach { n ->
+                        DropdownMenuItem(text = { Text(if (n == 0) "All" else "Top $n") },
+                            onClick = { top = n; topOpen = false })
+                    }
+                }
+            }
+        }
         HorizontalDivider()
+        if (mapMode) {
+            StorageMap(visible) { e -> if (e.file.isDirectory) path = e.file else preview = e.file }
+        } else
         LazyColumn(Modifier.fillMaxSize()) {
-            items(entries, key = { it.file.path }) { e ->
+            items(visible, key = { it.file.path }) { e ->
                 Column(
                     Modifier.fillMaxWidth()
                         .clickable { if (e.file.isDirectory) path = e.file else preview = e.file }
@@ -298,6 +371,60 @@ fun StorageScreen(onChanged: () -> Unit) {
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } },
         )
+    }
+}
+
+/** Treemap of the current folder: each item is a block sized by its space, colored by type. */
+@Composable
+private fun StorageMap(entries: List<Entry>, onOpen: (Entry) -> Unit) {
+    val shown = remember(entries) {
+        entries.filter { (it.size ?: 0) > 0 }.sortedByDescending { it.size }.take(150)
+    }
+    Column(Modifier.fillMaxSize().padding(8.dp)) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val density = LocalDensity.current
+            val wPx = with(density) { maxWidth.toPx() }
+            val hPx = with(density) { maxHeight.toPx() }
+            val rects = remember(shown, wPx, hPx) {
+                Treemap.layout(shown.map { it.size!!.toDouble() }, wPx, hPx)
+            }
+            if (shown.isEmpty()) {
+                Text("Nothing to show", Modifier.align(Alignment.Center),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            shown.forEachIndexed { i, e ->
+                val r = rects.getOrNull(i) ?: return@forEachIndexed
+                val w = with(density) { (r.w - 2f).coerceAtLeast(0f).toDp() }
+                val h = with(density) { (r.h - 2f).coerceAtLeast(0f).toDp() }
+                Box(
+                    Modifier
+                        .offset { IntOffset((r.x + 1f).roundToInt(), (r.y + 1f).roundToInt()) }
+                        .size(w, h)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Kind.of(e.file).color)
+                        .clickable { onOpen(e) }
+                        .padding(4.dp)
+                ) {
+                    if (w > 56.dp && h > 34.dp) {
+                        Column {
+                            Text(e.file.name, color = Color.White, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                            Text(fmt(e.size), color = Color.White.copy(alpha = 0.85f),
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Kind.values().forEach { k ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(k.color))
+                    Text(" " + k.label, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
@@ -429,6 +556,65 @@ private val TEXT_EXT = setOf("txt", "log", "md", "json", "xml", "csv", "html", "
 private fun mimeOf(f: File): String =
     MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
 
+private val VIDEO_EXT = setOf("mp4", "m4v", "3gp", "webm", "mkv", "mov")
+private val AUDIO_EXT = setOf("mp3", "flac", "m4a", "aac", "wav", "ogg", "opus", "amr")
+
+private fun clock(ms: Int): String {
+    val t = (ms / 1000).coerceAtLeast(0)
+    return "%d:%02d".format(t / 60, t % 60)
+}
+
+/**
+ * Built-in player for video and audio: Android's VideoView with our own controls inside the dialog
+ * (the stock MediaController is a floating window that covers the dialog's buttons).
+ */
+@Composable
+private fun MediaPlayerView(f: File, audio: Boolean) {
+    var video by remember { mutableStateOf<VideoView?>(null) }
+    var playing by remember { mutableStateOf(false) }
+    var pos by remember { mutableIntStateOf(0) }
+    var dur by remember { mutableIntStateOf(0) }
+    var seeking by remember { mutableStateOf(false) }
+
+    LaunchedEffect(video) {
+        val v = video ?: return@LaunchedEffect
+        while (true) {
+            if (!seeking) { pos = v.currentPosition; playing = v.isPlaying }
+            if (dur <= 0) dur = v.duration.coerceAtLeast(0)
+            delay(250)
+        }
+    }
+    Column(Modifier.fillMaxWidth()) {
+        AndroidView(
+            factory = { c ->
+                VideoView(c).also { v ->
+                    v.setVideoPath(f.path)
+                    v.setOnPreparedListener { v.seekTo(1); dur = v.duration }   // show the first frame
+                    v.setOnCompletionListener { playing = false }
+                    video = v
+                }
+            },
+            // audio files still play through a VideoView, just without a picture
+            modifier = Modifier.fillMaxWidth().height(if (audio) 1.dp else 320.dp),
+            onRelease = { it.stopPlayback() },
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = {
+                video?.let { v -> if (v.isPlaying) v.pause() else v.start(); playing = v.isPlaying }
+            }) { Ico(if (playing) R.drawable.ic_pause else R.drawable.ic_play, if (playing) "Pause" else "Play", size = 24) }
+            Slider(
+                value = pos.toFloat().coerceIn(0f, maxOf(dur, 1).toFloat()),
+                onValueChange = { seeking = true; pos = it.toInt() },
+                onValueChangeFinished = { video?.seekTo(pos); seeking = false },
+                valueRange = 0f..maxOf(dur, 1).toFloat(),
+                modifier = Modifier.weight(1f),
+            )
+            Text("${clock(pos)} / ${clock(dur)}", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 /** Image or video thumbnail, or null for other types. */
 private fun loadThumb(f: File, mime: String): Bitmap? = try {
     when {
@@ -460,7 +646,12 @@ private fun readHead(f: File): String? = try {
 private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val mime = remember(f) { mimeOf(f) }
-    val bitmap by produceState<Bitmap?>(null, f) { value = withContext(Dispatchers.IO) { loadThumb(f, mime) } }
+    val ext = remember(f) { f.extension.lowercase() }
+    val isVideo = mime.startsWith("video/") || ext in VIDEO_EXT
+    val isAudio = mime.startsWith("audio/") || ext in AUDIO_EXT
+    val bitmap by produceState<Bitmap?>(null, f) {
+        value = if (isVideo || isAudio) null else withContext(Dispatchers.IO) { loadThumb(f, mime) }
+    }
     val text by produceState<String?>(null, f) {
         value = if (mime.startsWith("text/") || f.extension.lowercase() in TEXT_EXT)
             withContext(Dispatchers.IO) { readHead(f) } else null
@@ -469,20 +660,23 @@ private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.padding(12.dp).fillMaxWidth(),
         title = { Text(f.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (isVideo || isAudio) MediaPlayerView(f, isAudio)
                 bitmap?.let {
                     Image(bitmap = it.asImageBitmap(), contentDescription = null,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp),
                         contentScale = ContentScale.Fit)
                 }
                 text?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)
                             .verticalScroll(rememberScrollState()))
                 }
-                if (bitmap == null && text == null) {
+                if (bitmap == null && text == null && !isVideo && !isAudio) {
                     Text("No preview for this file type. Use Open with... to view it in another app.",
                         style = MaterialTheme.typography.bodySmall)
                 }

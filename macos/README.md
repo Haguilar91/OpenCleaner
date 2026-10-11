@@ -3,8 +3,17 @@
 A SwiftUI app that finds reclaimable disk space on macOS, shows it with sizes, and
 deletes only what you tick and confirm. It is the macOS version of OpenCleaner.
 
-**Status:** builds on macOS 13+. The cleaning flows have not been fully tested, so read the
+**Status:** builds and runs on macOS 13+. The cleaning flows have not been fully tested, so read the
 confirmation list before cleaning.
+
+## Features
+
+- **Disk usage** as a list or a **disk map** (WinDirStat-style treemap: click a folder to drill in,
+  click a file to preview it). **Sort** by biggest, oldest, newest or file type and show the **Top**
+  5 / 10 / 50 / 100 or all. A percentage shows while sizes are measured.
+- **Preview** a file before deleting it: images, start of text files, details, and a built-in
+  **player for mp4, mp3, flac** and other audio/video. Reveal in Finder, Open, Move to Trash.
+- **Review** the files inside a Clean item (eye button) before ticking it.
 
 ## Build and run
 

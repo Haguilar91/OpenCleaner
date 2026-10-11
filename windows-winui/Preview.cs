@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Media.Core;
 using Windows.Storage;
 
 namespace OpenCleaner;
@@ -17,6 +18,12 @@ static class Preview
     private static readonly HashSet<string> TextExt = new(StringComparer.OrdinalIgnoreCase)
         { ".txt", ".log", ".md", ".json", ".xml", ".csv", ".html", ".htm", ".ini", ".conf", ".cfg", ".yaml",
           ".yml", ".cs", ".py", ".js", ".sh", ".bat", ".cmd", ".ps1", ".srt", ".vcf", ".gpx", ".config" };
+
+    private static readonly HashSet<string> VideoExt = new(StringComparer.OrdinalIgnoreCase)
+        { ".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi", ".wmv" };
+
+    private static readonly HashSet<string> AudioExt = new(StringComparer.OrdinalIgnoreCase)
+        { ".mp3", ".flac", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".wma" };
 
     private static void Launch(string file, string args = null)
     {
@@ -38,13 +45,27 @@ static class Preview
         try
         {
             var fi = new FileInfo(path);
+            if (VideoExt.Contains(ext) || AudioExt.Contains(ext))
+            {
+                // built-in player: play/pause, seek bar and volume come with the transport controls
+                return new MediaPlayerElement
+                {
+                    AreTransportControlsEnabled = true,
+                    AutoPlay = false,
+                    Source = MediaSource.CreateFromUri(new Uri(path)),
+                    Stretch = Stretch.Uniform,
+                    MinWidth = 560,
+                    MinHeight = AudioExt.Contains(ext) ? 140 : 320,
+                    MaxHeight = 420,
+                };
+            }
             if (ImageExt.Contains(ext) && fi.Length < 60L * 1024 * 1024)
             {
                 var file = await StorageFile.GetFileFromPathAsync(path);
                 using var stream = await file.OpenReadAsync();
                 var bmp = new BitmapImage { DecodePixelWidth = 800 };
                 await bmp.SetSourceAsync(stream);
-                return new Image { Source = bmp, MaxHeight = 320, Stretch = Stretch.Uniform };
+                return new Image { Source = bmp, MaxHeight = 480, Stretch = Stretch.Uniform };
             }
             if (TextExt.Contains(ext))
             {
@@ -97,8 +118,9 @@ static class Preview
     /// <summary>Shows one file. Returns true if the user chose Move to Recycle Bin (only offered when canTrash).</summary>
     public static async Task<bool> Show(XamlRoot root, string path, bool canTrash)
     {
-        var body = new StackPanel { Spacing = 12 };
-        body.Children.Add(await BuildView(path));
+        var body = new StackPanel { Spacing = 12, MinWidth = 560 };
+        var view = await BuildView(path);
+        body.Children.Add(view);
         body.Children.Add(new TextBlock
         {
             Text = Info(path),
@@ -120,6 +142,15 @@ static class Preview
         {
             dlg.PrimaryButtonText = "Move to Recycle Bin";
         }
+        dlg.Resources["ContentDialogMaxWidth"] = 900.0;   // wider than the default so media and images are bigger
+        dlg.Closed += (_, _) =>
+        {
+            if (view is MediaPlayerElement player)          // stop playback when the dialog closes
+            {
+                player.MediaPlayer?.Pause();
+                player.Source = null;
+            }
+        };
         // Open and Show in folder keep the dialog up so the user can still decide
         dlg.SecondaryButtonClick += (_, a) => { a.Cancel = true; Launch(path); };
         var reveal = new HyperlinkButton { Content = "Show in folder", Padding = new Thickness(0) };
