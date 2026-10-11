@@ -7,6 +7,14 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- OpenCleaner brand blue replaces the Windows accent colour -->
+            <Color x:Key="SystemAccentColor">#2563EB</Color>
+            <Color x:Key="SystemAccentColorLight1">#3A86FF</Color>
+            <Color x:Key="SystemAccentColorLight2">#5B9BFF</Color>
+            <Color x:Key="SystemAccentColorLight3">#8DBBFF</Color>
+            <Color x:Key="SystemAccentColorDark1">#1D4ED8</Color>
+            <Color x:Key="SystemAccentColorDark2">#1E40AF</Color>
+            <Color x:Key="SystemAccentColorDark3">#1E3A8A</Color>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

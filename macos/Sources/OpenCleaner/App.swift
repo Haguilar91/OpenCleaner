@@ -8,6 +8,7 @@ struct OpenCleanerApp: App {
         WindowGroup("OpenCleaner") {
             RootView()
                 .environmentObject(store)
+                .tint(Color(red: 0.145, green: 0.388, blue: 0.922))   // Trust Blue #2563EB
                 .frame(minWidth: 760, minHeight: 640)
                 .task { await store.scan() }
         }

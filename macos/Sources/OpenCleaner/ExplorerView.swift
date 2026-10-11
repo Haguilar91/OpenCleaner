@@ -15,6 +15,7 @@ final class ExplorerModel: ObservableObject {
     @Published var measuring = false
     @Published var error: String?
     @Published var toTrash: URL?
+    @Published var preview: URL?
     private var gen = 0
 
     var total: Int64 { entries.reduce(0) { $0 + ($1.size ?? 0) } }
@@ -104,6 +105,9 @@ struct ExplorerView: View {
             }
         }
         .onAppear { if model.entries.isEmpty { model.reload() } }
+        .sheet(item: Binding(get: { model.preview.map(Identified.init) }, set: { model.preview = $0?.url })) { f in
+            PreviewSheet(url: f.url) { model.toTrash = $0 }
+        }
         .alert("Move to Trash?", isPresented: Binding(get: { model.toTrash != nil },
                                                        set: { if !$0 { model.toTrash = nil } })) {
             Button("Move to Trash", role: .destructive) {
@@ -116,7 +120,7 @@ struct ExplorerView: View {
 
     @ViewBuilder private func row(_ e: Entry) -> some View {
         HStack(spacing: 12) {
-            Button { if e.isDir { model.go(e.id) } } label: {
+            Button { if e.isDir { model.go(e.id) } else { model.preview = e.id } } label: {
                 HStack(spacing: 10) {
                     Image(systemName: e.isDir ? "folder.fill" : "doc")
                         .foregroundStyle(e.isDir ? Color.accentColor : Color.secondary)

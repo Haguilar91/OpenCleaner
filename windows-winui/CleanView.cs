@@ -129,6 +129,7 @@ public sealed class CleanView : UserControl
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         UIElement lead;
         if (it.Empty)
@@ -170,6 +171,18 @@ public sealed class CleanView : UserControl
         g.Children.Add(lead);
         g.Children.Add(text);
         g.Children.Add(size);
+        if (!it.Empty && it.Paths.Count > 0)
+        {
+            var review = new Button
+            {
+                Content = new FontIcon { Glyph = "\uE7B3", FontSize = 14 },
+                Padding = new Thickness(8, 4, 8, 4),
+            };
+            ToolTipService.SetToolTip(review, "Review files");
+            review.Click += async (_, _) => await Preview.Review(XamlRoot, it);
+            Grid.SetColumn(review, 3);
+            g.Children.Add(review);
+        }
         if (disabled && !it.Empty) g.Opacity = 0.6;
         return Ui.Card(g);
     }

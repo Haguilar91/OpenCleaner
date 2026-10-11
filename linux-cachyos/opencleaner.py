@@ -17,7 +17,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 HOME = os.path.expanduser("~")
 JOURNAL_KEEP_MB = 200
@@ -301,6 +301,119 @@ def clean_item(item):
 
 # ---------------------------------------------------------------- UI
 
+# ---------------------------------------------------------------- file preview
+TEXT_EXT = {"txt", "log", "md", "json", "xml", "csv", "html", "htm", "ini", "conf", "cfg", "yaml",
+            "yml", "py", "js", "sh", "srt", "vcf", "gpx", "toml", "desktop", "service"}
+
+
+def read_head(path):
+    """First few KB of a text file, or None if it looks binary."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(4000)
+    except OSError:
+        return None
+    if b"\0" in data:
+        return None
+    return data.decode("utf-8", "replace")
+
+
+def show_preview(parent, path, on_trash=None):
+    """Dialog previewing one file (image, cached thumbnail, or start of a text file) so the user
+    can decide whether to delete it. on_trash(path) adds a Move to trash button."""
+    f = Gio.File.new_for_path(path)
+    try:
+        info = f.query_info("standard::content-type,standard::size,time::modified,thumbnail::path",
+                            Gio.FileQueryInfoFlags.NONE, None)
+        ctype = info.get_content_type() or ""
+        size = info.get_size()
+        mod = info.get_modification_date_time()
+        thumb = info.get_attribute_byte_string("thumbnail::path")
+    except GLib.Error:
+        ctype, size, mod, thumb = "", 0, None, None
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12,
+                  margin_bottom=12, margin_start=16, margin_end=16)
+    shown = False
+    if ctype.startswith("image/") or thumb:
+        pic = Gtk.Picture.new_for_filename(path if ctype.startswith("image/") else thumb)
+        pic.set_can_shrink(True)
+        pic.set_content_fit(Gtk.ContentFit.CONTAIN)
+        pic.set_size_request(-1, 260)
+        box.append(pic)
+        shown = True
+    elif ctype.startswith("text/") or ext in TEXT_EXT:
+        text = read_head(path)
+        if text is not None:
+            tv = Gtk.TextView(editable=False, cursor_visible=False, monospace=True,
+                              wrap_mode=Gtk.WrapMode.WORD_CHAR)
+            tv.get_buffer().set_text(text)
+            sw = Gtk.ScrolledWindow(min_content_height=200, max_content_height=240,
+                                    propagate_natural_height=True)
+            sw.set_child(tv)
+            box.append(sw)
+            shown = True
+    if not shown:
+        box.append(Gtk.Label(label="No preview for this file type. Use Open to view it in another app.",
+                             wrap=True, css_classes=["dim-label"], xalign=0))
+    when = mod.to_local().format("%x %X") if mod else ""
+    box.append(Gtk.Label(label=f"{fmt_size(size)} · {ctype or 'file'}\n{when}\n{os.path.dirname(path)}",
+                         css_classes=["caption", "dim-label"], xalign=0, wrap=True, selectable=True))
+
+    buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+    dlg = Adw.Dialog(title=os.path.basename(path), content_width=460)
+    if on_trash:
+        trash = Gtk.Button(label="Move to trash", css_classes=["destructive-action"])
+        trash.connect("clicked", lambda *_: (dlg.close(), on_trash(path)))
+        buttons.append(trash)
+    open_btn = Gtk.Button(label="Open")
+    open_btn.connect("clicked", lambda *_: Gtk.FileLauncher.new(f).launch(parent, None, None))
+    close = Gtk.Button(label="Close")
+    close.connect("clicked", lambda *_: dlg.close())
+    buttons.append(open_btn)
+    buttons.append(close)
+    box.append(buttons)
+
+    view = Adw.ToolbarView()
+    view.add_top_bar(Adw.HeaderBar())
+    view.set_content(box)
+    dlg.set_child(view)
+    dlg.present(parent)
+
+
+def show_review(parent, item):
+    """Dialog listing what a Clean item would delete; click a file to preview it."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=8,
+                  margin_bottom=12, margin_start=12, margin_end=12)
+    box.append(Gtk.Label(label="Click a file to preview it.", css_classes=["dim-label"], xalign=0))
+    lst = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+    paths = item.paths[:200]
+    for path in paths:
+        is_dir = os.path.isdir(path) and not os.path.islink(path)
+        row = Adw.ActionRow(title=GLib.markup_escape_text(os.path.basename(path)), activatable=not is_dir)
+        row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir else "text-x-generic-symbolic"))
+        try:
+            label = "folder" if is_dir else fmt_size(os.lstat(path).st_size)
+        except OSError:
+            label = "?"
+        row.add_suffix(Gtk.Label(label=label, css_classes=["dim-label"]))
+        if not is_dir:
+            row.connect("activated", lambda _r, p=path: show_preview(parent, p))
+        lst.append(row)
+    if len(item.paths) > len(paths):
+        lst.append(Adw.ActionRow(title=f"…and {len(item.paths) - len(paths)} more", activatable=False))
+    sw = Gtk.ScrolledWindow(min_content_height=320, max_content_height=420, propagate_natural_height=True)
+    sw.set_child(lst)
+    box.append(sw)
+    view = Adw.ToolbarView()
+    view.add_top_bar(Adw.HeaderBar())
+    view.set_content(box)
+    dlg = Adw.Dialog(title=item.title, content_width=480)
+    dlg.set_child(view)
+    dlg.present(parent)
+
+
 class Explorer(Gtk.Box):
     """Browse folders by size. Deleting only ever moves things to the trash."""
 
@@ -392,7 +505,7 @@ class Explorer(Gtk.Box):
     def _add_row(self, entry):
         is_dir = entry.is_dir(follow_symlinks=False)
         row = Adw.ActionRow(title=GLib.markup_escape_text(entry.name),
-                            activatable=is_dir)
+                            activatable=True)
         row.path = entry.path
         row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir
                                  else "text-x-generic-symbolic"))
@@ -408,6 +521,8 @@ class Explorer(Gtk.Box):
         if is_dir:
             row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
             row.connect("activated", lambda *_: self.go(entry.path))
+        else:
+            row.connect("activated", lambda *_: show_preview(self.win, entry.path, self.confirm_trash))
         self.list.append(row)
         self.bars.append(row)
 
@@ -570,6 +685,11 @@ class Window(Adw.ApplicationWindow):
             else:
                 row.set_activatable_widget(check)
                 row.add_suffix(Gtk.Label(label=fmt_size(it.size), css_classes=["dim-label"]))
+                if it.paths:
+                    review = Gtk.Button(icon_name="view-reveal-symbolic", valign=Gtk.Align.CENTER,
+                                        css_classes=["flat"], tooltip_text="Review files")
+                    review.connect("clicked", lambda _b, i=it: show_review(self, i))
+                    row.add_suffix(review)
             g.add(row)
             self.rows.append((it, check))
         self.stack.set_visible_child_name("list")
@@ -642,6 +762,14 @@ class App(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         Gtk.Window.set_default_icon_name("local.opencleaner.OpenCleaner")
+        # Brand: Trust Blue accent, Ubuntu font when installed (falls back to the system font)
+        css = Gtk.CssProvider()
+        css.load_from_string(
+            "@define-color accent_bg_color #2563EB;"
+            "@define-color accent_color #2563EB;"
+            "window { font-family: 'Ubuntu', sans-serif; }")
+        Gtk.StyleContext.add_provider_for_display(
+            Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
     def do_activate(self):
         (self.props.active_window or Window(self)).present()

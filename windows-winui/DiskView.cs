@@ -166,12 +166,13 @@ public sealed class DiskView : UserControl
         }
         else
         {
-            label = new TextBlock
+            var link = new HyperlinkButton { Content = name, Padding = new Thickness(0) };
+            ToolTipService.SetToolTip(link, "Preview");
+            link.Click += async (_, _) =>
             {
-                Text = name,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center,
+                if (await Preview.Show(XamlRoot, fullPath, true)) await RecycleAsync(fullPath);
             };
+            label = link;
         }
         label.VerticalAlignment = VerticalAlignment.Center;
 

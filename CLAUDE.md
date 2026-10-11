@@ -32,6 +32,12 @@ Windows already have them).
 
 ## Shared design rules (keep all apps consistent)
 
+- **File preview** (all apps): in Disk usage, clicking a file opens a preview (image, start of a text
+  file, size/date/location, Open, Delete/Trash); in Clean, each item with files has a Review list
+  whose files open the same preview. Android: `PreviewDialog`/`ReviewDialog` in `Screens.kt`;
+  macOS: `Preview.swift`; Linux: `show_preview`/`show_review`; WinForms: `PreviewForm`/`ReviewForm`;
+  WinUI: `Preview.cs`. Not yet compiled/run: Linux, WinForms, WinUI.
+
 - **Nothing is deleted until the user ticks items and confirms** in a dialog listing them.
 - **Every category always shows a row**: "Clean" (green) when nothing to remove, "Scan failed"
   (red) when a scanner throws. Never hide a category.

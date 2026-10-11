@@ -651,10 +651,208 @@ namespace OpenCleaner
         }
     }
 
+    // ------------------------------------------------------------------ file preview
+    // Shows one file (image, or the start of a text file) so the user can decide whether to delete it.
+    class PreviewForm : Form
+    {
+        static readonly string[] ImageExt = { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico", ".tif", ".tiff" };
+        static readonly string[] TextExt = { ".txt", ".log", ".md", ".json", ".xml", ".csv", ".html", ".htm",
+            ".ini", ".conf", ".cfg", ".yaml", ".yml", ".cs", ".py", ".js", ".sh", ".bat", ".cmd", ".ps1",
+            ".srt", ".vcf", ".gpx", ".config" };
+
+        public bool TrashRequested;
+        readonly string path;
+
+        public PreviewForm(string path, bool canTrash)
+        {
+            this.path = path;
+            Text = Path.GetFileName(path);
+            Font = new Font("Segoe UI", 9f);
+            ClientSize = new Size(520, 470);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+
+            Panel buttons = new Panel();
+            buttons.Dock = DockStyle.Bottom; buttons.Height = 48;
+            Label info = new Label();
+            info.Dock = DockStyle.Bottom; info.Height = 64;
+            info.Padding = new Padding(12, 6, 12, 0);
+            info.ForeColor = Color.DimGray;
+            info.Text = InfoText();
+
+            Control view = BuildView();
+            view.Dock = DockStyle.Fill;
+
+            Button close = new Button();
+            close.Text = "Close"; close.SetBounds(430, 9, 80, 30);
+            close.DialogResult = DialogResult.Cancel;
+            Button open = new Button();
+            open.Text = "Open"; open.SetBounds(344, 9, 80, 30);
+            open.Click += delegate { Launch(path); };
+            Button reveal = new Button();
+            reveal.Text = "Show in folder"; reveal.SetBounds(236, 9, 102, 30);
+            reveal.Click += delegate { Launch("explorer.exe", "/select,\"" + path + "\""); };
+            buttons.Controls.Add(close); buttons.Controls.Add(open); buttons.Controls.Add(reveal);
+            if (canTrash)
+            {
+                Button trash = new Button();
+                trash.Text = "Move to Recycle Bin"; trash.SetBounds(10, 9, 150, 30);
+                trash.ForeColor = Color.Firebrick;
+                trash.Click += delegate { TrashRequested = true; Close(); };
+                buttons.Controls.Add(trash);
+            }
+            CancelButton = close;
+
+            Controls.Add(view);
+            Controls.Add(info);
+            Controls.Add(buttons);
+            view.BringToFront();
+        }
+
+        static void Launch(string file, string args)
+        {
+            try { Process.Start(file, args); } catch (Exception) { }
+        }
+        static void Launch(string file)
+        {
+            try { Process.Start(file); } catch (Exception) { }
+        }
+
+        string InfoText()
+        {
+            try
+            {
+                FileInfo fi = new FileInfo(path);
+                return Util.Fmt(fi.Length) + "  |  " + (fi.Extension.Length > 0 ? fi.Extension : "file")
+                    + "\r\n" + fi.LastWriteTime.ToString("g") + "\r\n" + fi.DirectoryName;
+            }
+            catch (Exception) { return path; }
+        }
+
+        Control BuildView()
+        {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            try
+            {
+                FileInfo fi = new FileInfo(path);
+                if (Array.IndexOf(ImageExt, ext) >= 0 && fi.Length < 60L * 1024 * 1024)
+                {
+                    Image img;
+                    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (Image raw = Image.FromStream(fs))
+                        img = new Bitmap(raw);      // copy, so the file is not left locked
+                    PictureBox pb = new PictureBox();
+                    pb.Image = img; pb.SizeMode = PictureBoxSizeMode.Zoom;
+                    pb.BackColor = Color.FromArgb(242, 244, 248);
+                    return pb;
+                }
+                if (Array.IndexOf(TextExt, ext) >= 0)
+                {
+                    byte[] buf = new byte[4000];
+                    int n;
+                    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                        n = fs.Read(buf, 0, buf.Length);
+                    if (Array.IndexOf(buf, (byte)0, 0, n) < 0)
+                    {
+                        TextBox tb = new TextBox();
+                        tb.Multiline = true; tb.ReadOnly = true; tb.ScrollBars = ScrollBars.Vertical;
+                        tb.Font = new Font("Consolas", 9f);
+                        tb.BackColor = Color.White;
+                        tb.Text = Encoding.UTF8.GetString(buf, 0, n).Replace("\r\n", "\n").Replace("\n", "\r\n");
+                        tb.Select(0, 0);
+                        return tb;
+                    }
+                }
+            }
+            catch (Exception) { /* fall through to the no-preview message */ }
+            Label none = new Label();
+            none.Text = "No preview for this file type.\r\nUse Open to view it in another app.";
+            none.TextAlign = ContentAlignment.MiddleCenter;
+            none.ForeColor = Color.DimGray;
+            return none;
+        }
+
+        // Returns true if the user asked to move the file to the Recycle Bin.
+        public static bool Ask(IWin32Window owner, string path, bool canTrash)
+        {
+            using (PreviewForm f = new PreviewForm(path, canTrash))
+            {
+                f.ShowDialog(owner);
+                return f.TrashRequested;
+            }
+        }
+    }
+
+    // Lists what a Clean item would delete; double-click a file to preview it.
+    class ReviewForm : Form
+    {
+        public ReviewForm(Item item)
+        {
+            Text = item.Title;
+            Font = new Font("Segoe UI", 9f);
+            ClientSize = new Size(560, 440);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+
+            Label hint = new Label();
+            hint.Dock = DockStyle.Top; hint.Height = 28;
+            hint.Padding = new Padding(10, 8, 0, 0);
+            hint.ForeColor = Color.DimGray;
+            hint.Text = "Double-click a file to preview it.";
+
+            ListView lv = new ListView();
+            lv.Dock = DockStyle.Fill;
+            lv.View = View.Details; lv.FullRowSelect = true; lv.MultiSelect = false;
+            lv.HeaderStyle = ColumnHeaderStyle.None;
+            lv.BorderStyle = BorderStyle.None;
+            lv.Columns.Add("Name", 400);
+            lv.Columns.Add("Size", 120, HorizontalAlignment.Right);
+            int shown = Math.Min(item.Paths.Count, 200);
+            for (int i = 0; i < shown; i++)
+            {
+                string p = item.Paths[i];
+                bool dir = Util.IsDir(p);
+                ListViewItem lvi = new ListViewItem(Path.GetFileName(p));
+                lvi.Name = p;
+                long len = 0;
+                if (!dir) { try { len = new FileInfo(p).Length; } catch (Exception) { } }
+                lvi.SubItems.Add(dir ? "folder" : Util.Fmt(len));
+                lv.Items.Add(lvi);
+            }
+            if (item.Paths.Count > shown)
+            {
+                ListViewItem more = new ListViewItem("...and " + (item.Paths.Count - shown) + " more");
+                more.ForeColor = Color.DimGray;
+                lv.Items.Add(more);
+            }
+            lv.DoubleClick += delegate
+            {
+                if (lv.SelectedItems.Count == 0) return;
+                string p = lv.SelectedItems[0].Name;
+                if (p.Length > 0 && !Util.IsDir(p) && File.Exists(p)) PreviewForm.Ask(this, p, false);
+            };
+
+            Panel bar = new Panel();
+            bar.Dock = DockStyle.Bottom; bar.Height = 44;
+            Button close = new Button();
+            close.Text = "Close"; close.SetBounds(470, 7, 80, 30);
+            close.DialogResult = DialogResult.Cancel;
+            bar.Controls.Add(close);
+            CancelButton = close;
+
+            Controls.Add(lv);
+            Controls.Add(hint);
+            Controls.Add(bar);
+            lv.BringToFront();
+        }
+    }
+
     class MainForm : Form
     {
         readonly bool isAdmin = Util.IsAdmin();
-        static readonly Color Teal = Color.FromArgb(11, 122, 115);
+        static readonly Color Brand = Color.FromArgb(37, 99, 235);   // Trust Blue #2563EB
         static readonly Color Green = Color.FromArgb(30, 140, 80);
         TabControl tabs = new TabControl();
         Label freeLabel = new Label();
@@ -662,7 +860,7 @@ namespace OpenCleaner
         // Clean tab
         ListView cleanList = new ListView();
         Label summary = new Label();
-        Button scanBtn = new Button(), cleanBtn = new Button(), adminBtn = new Button();
+        Button scanBtn = new Button(), cleanBtn = new Button(), adminBtn = new Button(), reviewBtn = new Button();
         List<Item> items = new List<Item>();
         bool busy, populating;
 
@@ -688,7 +886,7 @@ namespace OpenCleaner
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             Panel header = new Panel();
-            header.Dock = DockStyle.Top; header.Height = 52; header.BackColor = Teal;
+            header.Dock = DockStyle.Top; header.Height = 52; header.BackColor = Brand;
             PictureBox logo = new PictureBox();
             logo.SetBounds(12, 10, 32, 32); logo.SizeMode = PictureBoxSizeMode.Zoom;
             logo.BackColor = Color.Transparent;
@@ -776,6 +974,12 @@ namespace OpenCleaner
             StyleButton(adminBtn, false);
             adminBtn.Visible = !isAdmin;
             adminBtn.Click += OnRestartAdmin;
+            reviewBtn.Text = "Review files..."; reviewBtn.SetBounds(312, 12, 120, 32);
+            StyleButton(reviewBtn, false);
+            reviewBtn.Enabled = false;
+            reviewBtn.Click += delegate { ReviewCurrent(); };
+            cleanList.SelectedIndexChanged += delegate { reviewBtn.Enabled = CurrentItem() != null; };
+            cleanList.DoubleClick += delegate { ReviewCurrent(); };
             cleanBtn.Text = "Clean selected"; cleanBtn.Width = 150; cleanBtn.Height = 34;
             StyleButton(cleanBtn, true);
             cleanBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -784,7 +988,7 @@ namespace OpenCleaner
             summary.TextAlign = ContentAlignment.MiddleRight;
             summary.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
-            bar.Controls.Add(scanBtn); bar.Controls.Add(adminBtn);
+            bar.Controls.Add(scanBtn); bar.Controls.Add(adminBtn); bar.Controls.Add(reviewBtn);
             bar.Controls.Add(summary); bar.Controls.Add(cleanBtn);
             bar.Resize += delegate
             {
@@ -794,6 +998,21 @@ namespace OpenCleaner
             page.Controls.Add(cleanList);
             page.Controls.Add(bar);
             cleanList.BringToFront();
+        }
+
+        // The highlighted Clean row's item, if it has files that can be reviewed.
+        Item CurrentItem()
+        {
+            if (cleanList.SelectedItems.Count == 0) return null;
+            Item it = cleanList.SelectedItems[0].Tag as Item;
+            return (it != null && !it.Empty && it.Paths.Count > 0) ? it : null;
+        }
+
+        void ReviewCurrent()
+        {
+            Item it = CurrentItem();
+            if (it == null) return;
+            using (ReviewForm f = new ReviewForm(it)) f.ShowDialog(this);
         }
 
         // A 1px-wide image list is the standard trick to make ListView rows taller.
@@ -816,7 +1035,7 @@ namespace OpenCleaner
             b.FlatStyle = FlatStyle.Flat;
             b.FlatAppearance.BorderSize = primary ? 0 : 1;
             b.FlatAppearance.BorderColor = Color.Silver;
-            b.BackColor = primary ? Teal : Color.White;
+            b.BackColor = primary ? Brand : Color.White;
             b.ForeColor = primary ? Color.White : Color.Black;
             b.Font = new Font("Segoe UI", 9.5f);
             b.Cursor = Cursors.Hand;
@@ -1005,6 +1224,9 @@ namespace OpenCleaner
                 if (diskList.SelectedItems.Count == 0) return;
                 string p = diskList.SelectedItems[0].Name;
                 if (Util.IsDir(p)) LoadDisk(p);
+                else if (File.Exists(p) && PreviewForm.Ask(this, p, true)
+                    && MessageBox.Show(this, p, "Move to Recycle Bin?", MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question) == DialogResult.Yes) TrashPath(p);
             };
 
             Panel bottom = new Panel();
@@ -1085,6 +1307,11 @@ namespace OpenCleaner
             string p = diskList.SelectedItems[0].Name;
             if (MessageBox.Show(this, p, "Move to Recycle Bin?", MessageBoxButtons.YesNo,
                     MessageBoxIcon.Question) != DialogResult.Yes) return;
+            TrashPath(p);
+        }
+
+        void TrashPath(string p)
+        {
             try
             {
                 Util.SendToRecycleBin(p);

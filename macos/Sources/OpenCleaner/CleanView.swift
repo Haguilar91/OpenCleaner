@@ -45,6 +45,7 @@ struct CleanView: View {
             .padding(.vertical, 12)
             .background(.bar)
         }
+        .sheet(item: $store.reviewing) { ReviewSheet(item: $0) }
         .alert("Delete selected items?", isPresented: $store.confirming) {
             Button("Clean", role: .destructive) { Task { await store.cleanSelected() } }
             Button("Cancel", role: .cancel) {}
@@ -106,6 +107,10 @@ struct CleanView: View {
                     .foregroundStyle(item.failed ? Color.red : Color.green)
             } else {
                 Text(fmt(item.size)).foregroundStyle(.secondary).monospacedDigit()
+                if !item.paths.isEmpty {
+                    Button { store.reviewing = item } label: { Image(systemName: "eye") }
+                        .buttonStyle(.borderless).help("Review files")
+                }
             }
         }
         .padding(.horizontal, 14)
