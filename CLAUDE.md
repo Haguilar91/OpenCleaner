@@ -66,6 +66,9 @@ Windows already have them).
 - **WinForms layout is in 96 DPI pixels**: the form uses `AutoScaleMode.Dpi` (set at the end of the
   constructor, inside `SuspendLayout/ResumeLayout`) to scale control bounds; list column widths and
   row heights are not auto-scaled, so wrap them in `S(px)`. Without this, text clips at 125%+.
+- **App icons come from `docs/brand/svg/`** (see `docs/brand/README.md`). Never edit the per-app
+  icon files by hand: change the SVGs and run `python3 docs/brand/build_icons.py`. Drive icon at
+  64 px and up, sweep mark at 48 px and below.
 - Screenshots live in `docs/screenshots/` (`<platform>-clean.png`, `<platform>-disk.png`).
 - The macOS UI deliberately mirrors the Linux window: header bar (name + refresh, segmented
   Clean / Disk usage switch, free space), grouped rounded cards, bottom bar with the summary and a

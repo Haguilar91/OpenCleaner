@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/png/opencleaner-light-256.png" width="128" alt="OpenCleaner icon"></p>
+
 # OpenCleaner
 
 Open-source disk cleaners for **Linux (CachyOS/Arch)**, **macOS**, **Windows** and **Android**.
