@@ -96,6 +96,7 @@ fun PermissionScreen() {
 @Composable
 fun CleanScreen(vm: CleanVm) {
     val groups = vm.items.groupBy { it.group }
+    var reviewing by remember { mutableStateOf<CleanItem?>(null) }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(Modifier.weight(1f)) {
@@ -105,7 +106,7 @@ fun CleanScreen(vm: CleanVm) {
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(16.dp, 12.dp, 16.dp, 4.dp))
                     }
-                    items(list, key = { it.id }) { CleanRow(vm, it) }
+                    items(list, key = { it.id }) { CleanRow(vm, it) { reviewing = it } }
                 }
             }
             HorizontalDivider()
@@ -131,6 +132,7 @@ fun CleanScreen(vm: CleanVm) {
         }
     }
 
+    reviewing?.let { ReviewDialog(it) { reviewing = null } }
     if (vm.confirming) {
         AlertDialog(
             onDismissRequest = { vm.confirming = false },
@@ -153,7 +155,7 @@ fun CleanScreen(vm: CleanVm) {
 }
 
 @Composable
-private fun CleanRow(vm: CleanVm, item: CleanItem) {
+private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .clickable(enabled = !item.empty) { vm.toggle(item.id) }
@@ -172,7 +174,10 @@ private fun CleanRow(vm: CleanVm, item: CleanItem) {
                 overflow = TextOverflow.Ellipsis)
         }
         if (item.empty) Text("Clean ✓", color = Green)
-        else Text(fmt(item.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else {
+            Text(fmt(item.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onReview) { Text("Review") }
+        }
     }
 }
 
@@ -250,7 +255,9 @@ fun StorageScreen(onChanged: () -> Unit) {
         }
     }
 
-    preview?.let { PreviewDialog(it) { preview = null } }
+    preview?.let { f ->
+        PreviewDialog(f, { preview = null }, onDelete = { preview = null; toDelete = f })
+    }
     toDelete?.let { f ->
         AlertDialog(
             onDismissRequest = { toDelete = null },
@@ -437,7 +444,7 @@ private fun readHead(f: File): String? = try {
 } catch (e: Exception) { null }
 
 @Composable
-private fun PreviewDialog(f: File, onDismiss: () -> Unit) {
+private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     val mime = remember(f) { mimeOf(f) }
     val bitmap by produceState<Bitmap?>(null, f) { value = withContext(Dispatchers.IO) { loadThumb(f, mime) } }
@@ -472,15 +479,60 @@ private fun PreviewDialog(f: File, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                try {
-                    val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
-                    val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    ctx.startActivity(Intent.createChooser(view, "Open with"))
-                } catch (e: Exception) { /* no app can open this file */ }
-            }) { Text("Open with...") }
+            Row {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = {
+                    try {
+                        val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
+                        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        ctx.startActivity(Intent.createChooser(view, "Open with"))
+                    } catch (e: Exception) { /* no app can open this file */ }
+                }) { Text("Open with...") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
+}
+
+/** Lists what a Clean item would delete so each file can be previewed before ticking it. */
+@Composable
+private fun ReviewDialog(item: CleanItem, onDismiss: () -> Unit) {
+    var preview by remember { mutableStateOf<File?>(null) }
+    val shown = remember(item) { item.files.take(200) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column {
+                Text("Tap a file to preview it.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                    items(shown, key = { it.path }) { f ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable(enabled = f.isFile) { preview = f }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(if (f.isDirectory) "📁 " else "📄 ")
+                            Text(f.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(if (f.isFile) fmt(f.length()) else "folder",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (item.files.size > shown.size) {
+                        item { Text("…and ${item.files.size - shown.size} more",
+                            style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+    preview?.let { PreviewDialog(it, { preview = null }) }
 }
