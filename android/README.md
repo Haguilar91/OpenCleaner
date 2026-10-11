@@ -32,3 +32,7 @@ Requires Android 11 (API 30) or newer.
 ## Status
 
 Compiles. Not yet tested on a device.
+
+## Icons
+
+UI icons are from [Lucide](https://lucide.dev) (ISC license), stored as vector drawables in `app/src/main/res/drawable/ic_*.xml`.

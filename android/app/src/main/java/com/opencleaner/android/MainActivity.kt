@@ -54,7 +54,7 @@ fun AppRoot() {
 
     val vm: CleanVm = viewModel()
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("🧹" to "Clean", "📁" to "Storage", "📱" to "Apps")
+    val tabs = listOf(R.drawable.ic_clean to "Clean", R.drawable.ic_storage to "Storage", R.drawable.ic_apps to "Apps")
 
     Scaffold(
         bottomBar = {
@@ -63,7 +63,7 @@ fun AppRoot() {
                     NavigationBarItem(
                         selected = tab == i,
                         onClick = { tab = i },
-                        icon = { Text(icon) },
+                        icon = { Ico(icon) },
                         label = { Text(label) },
                     )
                 }

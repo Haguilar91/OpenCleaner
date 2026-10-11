@@ -28,9 +28,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,7 +41,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +71,12 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private val Green = Color(0xFF2E9E5B)
+
+/** Minimal Lucide outline icon (see res/drawable/ic_*.xml), tinted with the current content color. */
+@Composable
+fun Ico(res: Int, desc: String? = null, tint: Color = LocalContentColor.current, size: Int = 20) {
+    Icon(painterResource(res), desc, Modifier.size(size.dp), tint = tint)
+}
 
 // ---------------------------------------------------------------- permission
 @Composable
@@ -115,7 +127,7 @@ fun CleanScreen(vm: CleanVm) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                TextButton(onClick = { vm.scan() }, enabled = !vm.busy) { Text("Rescan") }
+                IconButton(onClick = { vm.scan() }, enabled = !vm.busy) { Ico(R.drawable.ic_refresh, "Rescan") }
                 val known = vm.chosen.sumOf { it.size ?: 0 }
                 Text("${vm.chosen.size} selected · ${fmt(known)}",
                     modifier = Modifier.weight(1f),
@@ -163,7 +175,7 @@ private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (item.empty) {
-            Text("✓", color = Green, modifier = Modifier.width(48.dp).padding(start = 14.dp))
+            Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) { Ico(R.drawable.ic_check, tint = Green) }
         } else {
             Checkbox(checked = item.id in vm.selected, onCheckedChange = { vm.toggle(item.id) })
         }
@@ -173,10 +185,10 @@ private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
         }
-        if (item.empty) Text("Clean ✓", color = Green)
+        if (item.empty) { Ico(R.drawable.ic_check, tint = Green, size = 16); Text(" Clean", color = Green) }
         else {
             Text(fmt(item.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = onReview) { Text("Review") }
+            IconButton(onClick = onReview) { Ico(R.drawable.ic_review, "Review files") }
         }
     }
 }
@@ -222,7 +234,7 @@ fun StorageScreen(onChanged: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { path = path.parentFile ?: root }, enabled = path != root) { Text("Up") }
+            IconButton(onClick = { path = path.parentFile ?: root }, enabled = path != root) { Ico(R.drawable.ic_up, "Up") }
             Text(path.path.removePrefix(root.path).ifEmpty { "/" }.let { "Internal storage$it" },
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -239,12 +251,13 @@ fun StorageScreen(onChanged: () -> Unit) {
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (e.file.isDirectory) "📁 " else "📄 ")
+                        Ico(if (e.file.isDirectory) R.drawable.ic_folder else R.drawable.ic_file)
+                        Spacer(Modifier.width(8.dp))
                         Text(e.file.name, modifier = Modifier.weight(1f), maxLines = 1,
                             overflow = TextOverflow.Ellipsis)
                         Text(if (e.size == null) "…" else fmt(e.size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { toDelete = e.file }) { Text("Delete") }
+                        IconButton(onClick = { toDelete = e.file }) { Ico(R.drawable.ic_delete, "Delete") }
                     }
                     LinearProgressIndicator(
                         progress = { (e.size ?: 0).toFloat() / maxSize },
@@ -481,8 +494,8 @@ private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)
         confirmButton = {
             Row {
                 if (onDelete != null) {
-                    TextButton(onClick = onDelete) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    IconButton(onClick = onDelete) {
+                        Ico(R.drawable.ic_delete, "Delete", MaterialTheme.colorScheme.error)
                     }
                 }
                 TextButton(onClick = {
@@ -518,7 +531,8 @@ private fun ReviewDialog(item: CleanItem, onDismiss: () -> Unit) {
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(if (f.isDirectory) "📁 " else "📄 ")
+                            Ico(if (f.isDirectory) R.drawable.ic_folder else R.drawable.ic_file)
+                            Spacer(Modifier.width(8.dp))
                             Text(f.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(if (f.isFile) fmt(f.length()) else "folder",
                                 style = MaterialTheme.typography.bodySmall,
