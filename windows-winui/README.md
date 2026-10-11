@@ -13,10 +13,10 @@ Needs Windows 10 (1809+) or Windows 11 and the .NET 8 SDK:
 
     winget install Microsoft.DotNet.SDK.8
     build.bat
-    publish\OpenCleaner.exe
+    publish\win-x64\OpenCleaner.exe
 
 The first build downloads the Windows App SDK packages (a few hundred MB). The result is a
-self-contained folder: copy the whole `publish` folder to move it, not just the exe.
+self-contained folder: copy the whole `publish\win-x64` folder to move it, not just the exe.
 Admin-only items (Windows temp, update cache...) unlock after **Restart as administrator**.
 
 ## Status

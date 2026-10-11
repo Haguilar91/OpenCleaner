@@ -29,4 +29,14 @@
     <Content Include="icon.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- dotnet publish leaves out the compiled XAML (.xbf) of an unpackaged WinUI 3 app, and the app
+       cannot create its window without them. Copy them next to the exe after publishing. -->
+  <Target Name="CopyXbfToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <XbfFiles Include="$(OutDir)**\*.xbf" />
+    </ItemGroup>
+    <Copy SourceFiles="@(XbfFiles)"
+          DestinationFiles="@(XbfFiles->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
 </Project>

@@ -11,7 +11,8 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 | `linux-cachyos/` | Python, GTK4 + libadwaita (`opencleaner.py`, one file) | `python3 linux-cachyos/opencleaner.py`; standalone binary: `build_binary.sh` (PyInstaller, bundles GTK4/libadwaita; host tools get the original `LD_LIBRARY_PATH` via `host_env()`) |
 | `macos/` | SwiftUI, Swift package (`Sources/OpenCleaner`) | `./build_app.sh` then `open build/OpenCleaner.app` |
 | `windows/` | C# WinForms, single `Program.cs`, **C# 5 only** | `build.bat` (uses Windows' built-in `csc.exe`) |
-| `windows-winui/` | C# WinUI 3, .NET 8, UI built in code | `build.bat` then `publish\OpenCleaner.exe` |
+| `windows-winui/` | C# WinUI 3, .NET 8, UI built in code | `build.bat [win-x64|win-arm64|win-x86]` then `publish\<rid>\OpenCleaner.exe` |
+| `installer/` | Inno Setup | `installer\build_installer.bat` builds the WinUI app and `dist\OpenCleaner-Setup-<arch>.exe` (Windows only, build on a local drive) |
 | `android/` | Kotlin + Jetpack Compose, Gradle | Android Studio, or `gradle assembleDebug` |
 | `transfer/` | git-ignored: prebuilt archives/APK/exe for copying between machines | |
 
