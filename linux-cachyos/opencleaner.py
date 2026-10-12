@@ -4,6 +4,8 @@
 Nothing is deleted until you tick items and confirm. Root-level actions go
 through pkexec (polkit prompt), so the app itself never runs as root.
 """
+from __future__ import annotations
+
 import glob
 import os
 import re
@@ -11,14 +13,88 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
+# ---------------------------------------------------------------- older GTK / libadwaita
+# Debian 12 and Raspberry Pi OS ship GTK 4.8 and libadwaita 1.2, which lack AlertDialog, Dialog and
+# ToolbarView (libadwaita 1.4/1.5), FileLauncher (GTK 4.10) and CssProvider.load_from_string (4.12).
+if hasattr(Adw, "AlertDialog"):
+    AlertDialog = Adw.AlertDialog
+else:
+    class AlertDialog(Adw.MessageDialog):
+        """The older MessageDialog with AlertDialog's present(parent)."""
+
+        def present(self, parent=None):
+            if parent is not None:
+                self.set_transient_for(parent)
+            self.set_modal(True)
+            Adw.MessageDialog.present(self)
+
+if hasattr(Adw, "Dialog"):
+    Dialog = Adw.Dialog
+else:
+    class Dialog(Adw.Window):
+        """A modal window standing in for Adw.Dialog: set_child, present(parent), close, "closed"."""
+        __gsignals__ = {"closed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+
+        def __init__(self, title="", content_width=480):
+            super().__init__(title=title, modal=True, default_width=content_width)
+            self.connect("close-request", self._on_close)
+
+        def _on_close(self, *_):
+            self.emit("closed")
+            return False
+
+        def set_child(self, child):
+            self.set_content(child)
+
+        def present(self, parent=None):
+            if parent is not None:
+                self.set_transient_for(parent)
+            Adw.Window.present(self)
+
+if hasattr(Adw, "ToolbarView"):
+    ToolbarView = Adw.ToolbarView
+else:
+    class ToolbarView(Gtk.Box):
+        """Header bar on top, content below."""
+
+        def __init__(self):
+            super().__init__(orientation=Gtk.Orientation.VERTICAL)
+
+        def add_top_bar(self, widget):
+            self.append(widget)
+
+        def set_content(self, widget):
+            widget.set_vexpand(True)
+            self.append(widget)
+
+
+def launch_file(gfile, parent):
+    """Open a file in its default app."""
+    if hasattr(Gtk, "FileLauncher"):
+        Gtk.FileLauncher.new(gfile).launch(parent, None, None)
+    else:
+        Gio.AppInfo.launch_default_for_uri(gfile.get_uri(), None)
+
+
+def load_css(provider, text):
+    if hasattr(provider, "load_from_string"):
+        provider.load_from_string(text)
+    else:
+        try:
+            provider.load_from_data(text, -1)
+        except TypeError:
+            provider.load_from_data(text.encode())
+
+VERSION = "1.2"
 HOME = os.path.expanduser("~")
 JOURNAL_KEEP_MB = 200
 CACHE_MIN_BYTES = 100 * 1024 * 1024
@@ -63,6 +139,74 @@ def host_env():
 def run(cmd, **kw):
     kw.setdefault("env", host_env())
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+# ---------------------------------------------------------------- distro detection
+@dataclass
+class Distro:
+    id: str
+    name: str
+    family: str          # arch, debian, fedora or other
+    pm: str | None       # pacman, apt, dnf; None on immutable systems and unknown ones
+    immutable: bool      # image-based (Bazzite, Silverblue...): system packages are not cleaned or removed here
+    label: str
+    short: str = ""      # compact header text, e.g. "Ubuntu 24.04 · apt"
+
+
+def detect_distro(osrel=None, exists=os.path.exists, which=shutil.which):
+    """Read /etc/os-release and work out the distro family and its package manager.
+
+    Arch: Arch, CachyOS, Manjaro, EndeavourOS, Omarchy... Debian: Debian, Ubuntu, Linux Mint,
+    Raspberry Pi OS (raspbian)... Fedora: Fedora, Rocky, RHEL, Alma, Bazzite (image-based)..."""
+    if osrel is None:
+        for path in ("/etc/os-release", "/usr/lib/os-release"):
+            try:
+                osrel = open(path).read()
+                break
+            except OSError:
+                continue
+        osrel = osrel or ""
+    kv = {}
+    for line in osrel.splitlines():
+        if "=" in line and not line.lstrip().startswith("#"):
+            k, v = line.split("=", 1)
+            kv[k.strip()] = v.strip().strip('"').strip("'")
+    did = kv.get("ID", "").lower()
+    ids = {did, *kv.get("ID_LIKE", "").lower().split()}
+    omarchy = did == "omarchy" or exists(os.path.join(HOME, ".local/share/omarchy")) or bool(which("omarchy-version"))
+    if ids & {"arch", "archlinux", "archarm"} or omarchy:
+        family = "arch"
+    elif ids & {"debian", "ubuntu", "raspbian"}:
+        family = "debian"
+    elif ids & {"fedora", "rhel", "centos"}:
+        family = "fedora"
+    else:
+        family = "other"
+    immutable = exists("/run/ostree-booted") or did in ("bazzite", "silverblue", "kinoite", "aurora", "bluefin")
+    pm = None
+    if not immutable:
+        wanted = {"arch": ["pacman"], "debian": ["apt-get"], "fedora": ["dnf", "dnf5"],
+                  "other": ["pacman", "apt-get", "dnf"]}[family]
+        for cand in wanted:
+            if which(cand):
+                pm = {"apt-get": "apt", "dnf5": "dnf"}.get(cand, cand)
+                break
+    name = kv.get("PRETTY_NAME") or kv.get("NAME") or "Linux"
+    if omarchy:
+        name = "Omarchy (Arch Linux)"
+    elif did == "raspbian":
+        name = "Raspberry Pi OS (Debian)"
+    tail = " · image-based" if immutable else (f" · {pm}" if pm else "")
+    label = name + tail
+    short_name = " ".join(x for x in (kv.get("NAME", ""), kv.get("VERSION_ID", "")) if x) or name
+    if omarchy:
+        short_name = "Omarchy"
+    elif did == "raspbian":
+        short_name = "Raspberry Pi OS"
+    return Distro(did or "linux", name, family, pm, immutable, label, short_name + tail)
+
+
+DISTRO = detect_distro()
 
 
 def du_bytes_x(path):
@@ -193,6 +337,74 @@ def scan_user_cache():
     return items
 
 
+def dpkg_sizes(names):
+    """Installed size in bytes of Debian packages."""
+    r = run(["dpkg-query", "-W", "-f=${Installed-Size}\\n", *names])
+    return sum(int(x) * 1024 for x in r.stdout.split() if x.isdigit())
+
+
+def rpm_sizes(names):
+    r = run(["rpm", "-q", "--qf", "%{SIZE}\\n", *names])
+    return sum(int(x) for x in r.stdout.split() if x.isdigit())
+
+
+def scan_apt_cache():
+    files = glob.glob("/var/cache/apt/archives/*.deb")
+    if not files:
+        return []
+    size = sum(os.path.getsize(f) for f in files if os.path.exists(f))
+    return [Item("System", "APT package cache",
+                 f"{len(files)} downloaded .deb files; downloaded again when needed", size, True,
+                 root_script="apt-get clean")]
+
+
+def scan_apt_orphans():
+    r = run(["apt-get", "-s", "autoremove"])       # simulate only: changes nothing
+    names = re.findall(r"^Remv (\S+)", r.stdout, re.M)
+    if not names:
+        return []
+    return [Item("System", f"Unused packages ({len(names)})",
+                 ", ".join(names[:8]) + (" …" if len(names) > 8 else ""),
+                 dpkg_sizes(names), False, root_script="apt-get -y autoremove",
+                 confirm_note="Removes: " + ", ".join(names))]
+
+
+def scan_snap_old():
+    """Old disabled revisions that Snap keeps after an update (Ubuntu)."""
+    if not shutil.which("snap"):
+        return []
+    r = run(["snap", "list", "--all"])
+    old = re.findall(r"^(\S+)\s+\S+\s+(\d+)\s+.*\bdisabled\b", r.stdout, re.M)
+    if not old:
+        return []
+    size = sum(os.path.getsize(f"/var/lib/snapd/snaps/{n}_{rev}.snap")
+               for n, rev in old if os.path.exists(f"/var/lib/snapd/snaps/{n}_{rev}.snap"))
+    return [Item("System", f"Old Snap revisions ({len(old)})",
+                 ", ".join(f"{n} r{rev}" for n, rev in old[:6]) + (" …" if len(old) > 6 else ""),
+                 size, True,
+                 root_script=" && ".join(f"snap remove {n} --revision={rev}" for n, rev in old))]
+
+
+def scan_dnf_cache():
+    dirs = [d for d in ("/var/cache/dnf", "/var/cache/libdnf5") if os.path.isdir(d)]
+    size = sum(du_bytes(d) or 0 for d in dirs)
+    if size < 1024**2:
+        return []
+    return [Item("System", "DNF package cache", "Downloaded packages and metadata; downloaded again when needed",
+                 size, True, root_script="dnf clean all")]
+
+
+def scan_dnf_unneeded():
+    r = run(["dnf", "-q", "repoquery", "--unneeded", "--qf", "%{name}\\n"])
+    names = sorted({l.strip() for l in r.stdout.splitlines() if l.strip()})
+    if not names:
+        return []
+    return [Item("System", f"Unused packages ({len(names)})",
+                 ", ".join(names[:8]) + (" …" if len(names) > 8 else ""),
+                 rpm_sizes(names), False, root_script="dnf -y autoremove",
+                 confirm_note="Removes: " + ", ".join(names))]
+
+
 NAME_CACHE = os.path.join(HOME, ".cache", "opencleaner", "steam_names.json")
 
 
@@ -255,16 +467,30 @@ def scan_steam_prefixes():
     return items
 
 
-# (scanner, group, label shown when the scanner finds nothing)
-SCANNERS = [
-    (scan_pacman_cache, "System", "Pacman package cache"),
-    (scan_orphans, "System", "Orphaned packages"),
-    (scan_journal, "System", "Systemd journal"),
-    (scan_flatpak, "Apps", "Unused Flatpak runtimes"),
-    (scan_browser_backups, "Browser crash-recovery backups", "Crash-recovery backups"),
-    (scan_user_cache, "Large app caches (~/.cache)", "Large caches and Trash"),
-    (scan_steam_prefixes, "Steam leftovers", "Orphaned Proton prefixes"),
-]
+def build_scanners(d):
+    """(scanner, group, label shown when the scanner finds nothing), for the detected distro."""
+    s = []
+    if d.pm == "pacman":
+        s += [(scan_pacman_cache, "System", "Pacman package cache"),
+              (scan_orphans, "System", "Orphaned packages")]
+    elif d.pm == "apt":
+        s += [(scan_apt_cache, "System", "APT package cache"),
+              (scan_apt_orphans, "System", "Unused packages (autoremove)"),
+              (scan_snap_old, "System", "Old Snap revisions")]
+    elif d.pm == "dnf":
+        s += [(scan_dnf_cache, "System", "DNF package cache"),
+              (scan_dnf_unneeded, "System", "Unused packages (autoremove)")]
+    elif d.immutable:
+        s += [(lambda: [], "System", "System packages: image-based system, managed by image updates")]
+    s += [(scan_journal, "System", "Systemd journal"),
+          (scan_flatpak, "Apps", "Unused Flatpak runtimes"),
+          (scan_browser_backups, "Browser crash-recovery backups", "Crash-recovery backups"),
+          (scan_user_cache, "Large app caches (~/.cache)", "Large caches and Trash"),
+          (scan_steam_prefixes, "Steam leftovers", "Orphaned Proton prefixes")]
+    return s
+
+
+SCANNERS = build_scanners(DISTRO)
 
 
 # ---------------------------------------------------------------- cleaning
@@ -349,7 +575,10 @@ def show_preview(parent, path, on_trash=None):
     elif ctype.startswith("image/") or thumb:
         pic = Gtk.Picture.new_for_filename(path if ctype.startswith("image/") else thumb)
         pic.set_can_shrink(True)
-        pic.set_content_fit(Gtk.ContentFit.CONTAIN)
+        if hasattr(pic, "set_content_fit"):
+            pic.set_content_fit(Gtk.ContentFit.CONTAIN)
+        else:
+            pic.set_keep_aspect_ratio(True)
         pic.set_size_request(-1, 420)
         box.append(pic)
         shown = True
@@ -372,7 +601,7 @@ def show_preview(parent, path, on_trash=None):
                          css_classes=["caption", "dim-label"], xalign=0, wrap=True, selectable=True))
 
     buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-    dlg = Adw.Dialog(title=os.path.basename(path), content_width=720)
+    dlg = Dialog(title=os.path.basename(path), content_width=720)
     if video is not None:
         dlg.connect("closed", lambda *_: video.set_file(None))   # stop playback
     if on_trash:
@@ -380,14 +609,14 @@ def show_preview(parent, path, on_trash=None):
         trash.connect("clicked", lambda *_: (dlg.close(), on_trash(path)))
         buttons.append(trash)
     open_btn = Gtk.Button(label="Open")
-    open_btn.connect("clicked", lambda *_: Gtk.FileLauncher.new(f).launch(parent, None, None))
+    open_btn.connect("clicked", lambda *_: launch_file(f, parent))
     close = Gtk.Button(label="Close")
     close.connect("clicked", lambda *_: dlg.close())
     buttons.append(open_btn)
     buttons.append(close)
     box.append(buttons)
 
-    view = Adw.ToolbarView()
+    view = ToolbarView()
     view.add_top_bar(Adw.HeaderBar())
     view.set_content(box)
     dlg.set_child(view)
@@ -418,10 +647,10 @@ def show_review(parent, item):
     sw = Gtk.ScrolledWindow(min_content_height=320, max_content_height=420, propagate_natural_height=True)
     sw.set_child(lst)
     box.append(sw)
-    view = Adw.ToolbarView()
+    view = ToolbarView()
     view.add_top_bar(Adw.HeaderBar())
     view.set_content(box)
-    dlg = Adw.Dialog(title=item.title, content_width=480)
+    dlg = Dialog(title=item.title, content_width=480)
     dlg.set_child(view)
     dlg.present(parent)
 
@@ -764,7 +993,7 @@ class Explorer(Gtk.Box):
         self.progress.set_visible(self.pending > 0)
 
     def confirm_trash(self, path):
-        dlg = Adw.AlertDialog(heading="Move to trash?", body=path)
+        dlg = AlertDialog(heading="Move to trash?", body=path)
         dlg.add_response("cancel", "Cancel")
         dlg.add_response("trash", "Move to trash")
         dlg.set_response_appearance("trash", Adw.ResponseAppearance.DESTRUCTIVE)
@@ -784,23 +1013,306 @@ class Explorer(Gtk.Box):
             self.win.update_free()
             self.reload()
         else:
-            dlg = Adw.AlertDialog(heading="Could not trash", body=(r.stderr or "failed").strip())
+            dlg = AlertDialog(heading="Could not trash", body=(r.stderr or "failed").strip())
             dlg.add_response("ok", "OK")
             dlg.present(self.win)
+
+
+# ---------------------------------------------------------------- installed apps
+APP_SORTS = ["Biggest first", "Least recently used", "Recently used", "Name"]
+
+
+def parse_human(text):
+    """'12.5 MiB' (binary) or '314.4 MB' (decimal, as flatpak prints) -> bytes, or None."""
+    m = re.search(r"([\d.,]+)\s*([KMGT]?)(i?)B", text.replace(",", "."), re.I)
+    if not m:
+        return None
+    base = 1024 if m.group(3) else 1000
+    power = "KMGT".find(m.group(2).upper()) + 1 if m.group(2) else 0
+    return int(float(m.group(1)) * base ** power)
+
+
+def ago(ts):
+    if not ts:
+        return "last used: unknown"
+    d = (time.time() - ts) / 86400
+    if d < 1:
+        return "used today"
+    if d < 2:
+        return "used yesterday"
+    if d < 60:
+        return f"used {int(d)} days ago"
+    if d < 730:
+        return f"used {int(d / 30)} months ago"
+    return f"used {int(d / 365)} years ago"
+
+
+def native_owners_sizes(pm, files):
+    """Which package owns each .desktop file, and each package's installed size (bytes).
+    Returns ({package: first desktop file}, {package: size})."""
+    owners, sizes = {}, {}
+    if pm == "pacman":
+        r = run(["pacman", "-Qo", *files])
+        for line in r.stdout.splitlines():
+            m = re.match(r"^(.+) is owned by (\S+) (\S+)$", line)
+            if m:
+                owners.setdefault(m.group(2), m.group(1))
+        if owners:
+            r = run(["pacman", "-Qi", *owners])
+            for block in r.stdout.split("\n\n"):
+                name = size = None
+                for line in block.splitlines():
+                    if line.startswith("Name"):
+                        name = line.split(":", 1)[1].strip()
+                    elif line.startswith("Installed Size"):
+                        size = parse_human(line.split(":", 1)[1])
+                if name:
+                    sizes[name] = size
+    elif pm == "apt":
+        r = run(["dpkg", "-S", *files])
+        for line in r.stdout.splitlines():
+            m = re.match(r"^([^:\s]+)(?::\w+)?: (/.+)$", line)
+            if m:
+                owners.setdefault(m.group(1), m.group(2))
+        if owners:
+            r = run(["dpkg-query", "-W", "-f=${Package}\\t${Installed-Size}\\n", *owners])
+            for line in r.stdout.splitlines():
+                name, _, kib = line.partition("\t")
+                if kib.strip().isdigit():
+                    sizes[name] = int(kib) * 1024
+    elif pm == "dnf":
+        for fn in files:                              # one rpm call per file keeps each answer unambiguous
+            r = run(["rpm", "-qf", "--qf", "%{NAME}\\t%{SIZE}\\n", fn])
+            name, _, size = r.stdout.strip().partition("\t")
+            if name and size.isdigit():
+                owners.setdefault(name, fn)
+                sizes[name] = int(size)
+    return owners, sizes
+
+
+def native_uninstall_cmd(pm, pkg):
+    """Command that removes a native package; pkexec asks for the password."""
+    return {"pacman": ["pkexec", "pacman", "-Rns", "--noconfirm"],
+            "apt": ["pkexec", "apt-get", "remove", "--purge", "-y"],
+            "dnf": ["pkexec", "dnf", "remove", "-y"]}[pm] + [pkg]
+
+
+def load_apps():
+    """Installed desktop apps: native packages (pacman) and Flatpaks, with size and last-used time.
+    Last used is approximate: the access time of the program file, or of the Flatpak's data folder."""
+    apps = []
+    desktops = {}
+    for ai in Gio.AppInfo.get_all():
+        fn = ai.get_filename() if hasattr(ai, "get_filename") else None
+        if fn and ai.should_show() and "/flatpak/" not in fn:
+            desktops[fn] = ai
+    if desktops and DISTRO.pm:
+        owners, sizes = native_owners_sizes(DISTRO.pm, list(desktops))
+        for pkg, fn in owners.items():
+            ai = desktops[fn]
+            exe = shutil.which(ai.get_executable() or "")
+            try:
+                st = os.stat(exe) if exe else None
+                # Package managers stamp files with the package's build date. An access time that is not
+                # newer than that means the program has not been run since it was installed: unknown.
+                last = st.st_atime if st and st.st_atime > st.st_mtime + 60 else 0
+            except OSError:
+                last = 0
+            apps.append({"kind": "native", "pm": DISTRO.pm, "id": pkg, "name": ai.get_display_name(),
+                         "size": sizes.get(pkg) or 0, "last": last,
+                         "desktop_id": os.path.basename(fn)[:-8]})
+    if shutil.which("flatpak"):
+        r = run(["flatpak", "list", "--app", "--columns=application,name,size"])
+        for line in r.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            data = os.path.join(HOME, ".var/app", parts[0])
+            try:
+                last = os.stat(data).st_mtime
+            except OSError:
+                last = 0
+            apps.append({"kind": "flatpak", "id": parts[0], "name": parts[1],
+                         "size": parse_human(parts[2]) or 0, "last": last, "desktop_id": parts[0]})
+    return apps
+
+
+def app_leftovers(app):
+    """Folders in the home directory that belong to an app. Strict matches only: the package name
+    or desktop id exactly, or the Flatpak's own data folder."""
+    names = {app["id"], app["desktop_id"]}
+    found = []
+    if app["kind"] == "flatpak":
+        candidates = [os.path.join(HOME, ".var/app", app["id"])]
+    else:
+        candidates = [os.path.join(HOME, sub, n) for n in names
+                      for sub in (".config", ".cache", ".local/share")]
+    for path in candidates:
+        if os.path.isdir(path) and not os.path.islink(path):
+            found.append(path)
+    return found
+
+
+class AppsPage(Gtk.Box):
+    """Installed apps with size and last-used time; sort, Top N, and uninstall with a review list."""
+
+    def __init__(self, win):
+        super().__init__(orientation=Gtk.Orientation.VERTICAL)
+        self.win = win
+        self.apps = []
+        self.sort_mode = 0
+        self.top = 0
+        bar = Gtk.Box(spacing=6, margin_top=8, margin_bottom=4, margin_start=12, margin_end=12)
+        self.status = Gtk.Label(xalign=0, hexpand=True, css_classes=["dim-label"])
+        self.sort_dd = Gtk.DropDown.new_from_strings(APP_SORTS)
+        self.sort_dd.connect("notify::selected", self._on_sort)
+        self.top_dd = Gtk.DropDown.new_from_strings(["All"] + [f"Top {n}" for n in TOPS[1:]])
+        self.top_dd.connect("notify::selected", self._on_top)
+        for w in (self.status, self.sort_dd, self.top_dd):
+            bar.append(w)
+        self.append(bar)
+        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"],
+                                margin_start=12, margin_end=12, margin_bottom=12)
+        sw = Gtk.ScrolledWindow(vexpand=True)
+        sw.set_child(self.list)
+        self.append(sw)
+        self.reload()
+
+    def reload(self):
+        self.status.set_label("Loading apps…")
+
+        def work():
+            apps = load_apps()
+            GLib.idle_add(self._loaded, apps)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _loaded(self, apps):
+        self.apps = apps
+        self._show()
+
+    def _on_sort(self, dd, _p):
+        self.sort_mode = dd.get_selected()
+        self._show()
+
+    def _on_top(self, dd, _p):
+        self.top = TOPS[dd.get_selected()]
+        self._show()
+
+    def ordered(self):
+        key = {0: lambda a: -a["size"], 1: lambda a: a["last"], 2: lambda a: -a["last"],
+               3: lambda a: a["name"].lower()}[self.sort_mode]
+        items = sorted(self.apps, key=key)
+        return items[:self.top] if self.top else items
+
+    def _show(self):
+        while (r := self.list.get_row_at_index(0)) is not None:
+            self.list.remove(r)
+        total = sum(a["size"] for a in self.apps)
+        note = " · image-based system: only Flatpak apps can be uninstalled here" if DISTRO.immutable else ""
+        self.status.set_label(f"{len(self.apps)} apps · {fmt_size(total)}{note}")
+        for a in self.ordered():
+            kind = "Flatpak" if a["kind"] == "flatpak" else "Package " + a["id"]
+            row = Adw.ActionRow(title=GLib.markup_escape_text(a["name"]),
+                                subtitle=GLib.markup_escape_text(f"{kind} · {ago(a['last'])}"))
+            row.add_suffix(Gtk.Label(label=fmt_size(a["size"]), css_classes=["dim-label"]))
+            btn = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
+                             css_classes=["flat"], tooltip_text="Uninstall…")
+            btn.connect("clicked", lambda _b, app=a: self.review(app))
+            row.add_suffix(btn)
+            self.list.append(row)
+
+    # -- uninstall: review first, nothing happens until the user confirms
+    def review(self, app):
+        left = app_leftovers(app)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=8,
+                      margin_bottom=12, margin_start=12, margin_end=12)
+        what = {"pacman": "Removes the package with pacman -Rns (asks for your password).",
+                "apt": "Removes the package and its settings with apt-get remove --purge (asks for your password).",
+                "dnf": "Removes the package with dnf remove (asks for your password)."}.get(
+                    app.get("pm"), "Removes the Flatpak.")
+        box.append(Gtk.Label(label="Warning: this deletes permanently. Nothing goes to the Trash and it "
+                             "cannot be undone.", wrap=True, xalign=0, css_classes=["error"]))
+        box.append(Gtk.Label(label=what + " Ticked folders are deleted permanently. "
+                             "Folders that may hold your settings or data start unticked.",
+                             wrap=True, xalign=0, css_classes=["dim-label"]))
+        lst = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+        checks = []
+        for path in left:
+            safe = path.startswith(os.path.join(HOME, ".cache") + "/")
+            row = Adw.ActionRow(title=GLib.markup_escape_text(path.replace(HOME, "~")),
+                                subtitle=fmt_size(du_bytes(path)))
+            chk = Gtk.CheckButton(active=safe, valign=Gtk.Align.CENTER)
+            row.add_prefix(chk)
+            row.set_activatable_widget(chk)
+            lst.append(row)
+            checks.append((path, chk))
+        if left:
+            box.append(lst)
+        else:
+            box.append(Gtk.Label(label="No leftover folders found in your home directory.", xalign=0))
+        go = Gtk.Button(label="Delete permanently", css_classes=["destructive-action"], halign=Gtk.Align.END)
+        box.append(go)
+        view = ToolbarView()
+        view.add_top_bar(Adw.HeaderBar())
+        view.set_content(box)
+        dlg = Dialog(title=f"Uninstall {app['name']}?", content_width=560)
+        dlg.set_child(view)
+
+        def confirm(*_):
+            dlg.close()
+            self.uninstall(app, [p for p, c in checks if c.get_active()])
+
+        go.connect("clicked", confirm)
+        dlg.present(self.win)
+
+    def uninstall(self, app, folders):
+        self.status.set_label(f"Uninstalling {app['name']}…")
+
+        def work():
+            if app["kind"] == "native":
+                r = run(native_uninstall_cmd(app["pm"], app["id"]))
+            else:
+                r = run(["flatpak", "uninstall", "-y", app["id"]])
+            ok = r.returncode == 0
+            msg = (r.stderr or r.stdout).strip()[-300:]
+            moved = 0
+            if ok:
+                for path in folders:
+                    try:
+                        safe_remove(path)          # permanent, and only inside the home folder
+                        moved += 1
+                    except Exception:  # noqa: BLE001
+                        pass
+            GLib.idle_add(self._uninstalled, app, ok, msg, moved)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _uninstalled(self, app, ok, msg, moved):
+        if ok:
+            self.win.toast.add_toast(Adw.Toast(
+                title=f"{app['name']} uninstalled" + (f", {moved} folder(s) deleted" if moved else "")))
+        else:
+            dlg = AlertDialog(heading="Could not uninstall", body=msg or "cancelled or failed")
+            dlg.add_response("ok", "OK")
+            dlg.present(self.win)
+        self.win.update_free()
+        self.reload()
 
 
 class Window(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="OpenCleaner",
-                         default_width=720, default_height=780)
+                         default_width=940, default_height=780)
         self.rows = []  # (item, check_button)
         self.busy = False
 
-        toolbar = Adw.ToolbarView()
+        toolbar = ToolbarView()
         header = Adw.HeaderBar()
         self.scan_btn = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Rescan")
         self.scan_btn.connect("clicked", self.on_refresh)
-        brand = Gtk.Label(label="OpenCleaner", css_classes=["title-4"], margin_start=6, margin_end=10)
+        brand = Gtk.Label(label="OpenCleaner", css_classes=["title-4"], margin_start=6, margin_end=10,
+                          tooltip_text=f"OpenCleaner {VERSION}")
         header.pack_start(brand)
         header.pack_start(self.scan_btn)
         self.free_label = Gtk.Label(css_classes=["dim-label"])
@@ -828,9 +1340,13 @@ class Window(Adw.ApplicationWindow):
         bar = Gtk.Box(spacing=12, margin_top=10, margin_bottom=10,
                       margin_start=16, margin_end=16)
         self.total_label = Gtk.Label(xalign=0, hexpand=True)
+        self.distro_label = Gtk.Label(label=DISTRO.short, css_classes=["dim-label", "caption"],
+                                      ellipsize=Pango.EllipsizeMode.END,
+                                      tooltip_text=DISTRO.label + " (detected from /etc/os-release)")
         self.clean_btn = Gtk.Button(label="Clean selected", css_classes=["suggested-action"])
         self.clean_btn.connect("clicked", self.on_clean)
         bar.append(self.total_label)
+        bar.append(self.distro_label)
         bar.append(self.clean_btn)
         clean_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.toast.set_vexpand(True)
@@ -840,6 +1356,8 @@ class Window(Adw.ApplicationWindow):
         self.views.add_titled_with_icon(clean_box, "clean", "Clean", "edit-clear-all-symbolic")
         self.views.add_titled_with_icon(self.explorer, "explore", "Disk usage",
                                         "drive-harddisk-symbolic")
+        self.apps_page = AppsPage(self)
+        self.views.add_titled_with_icon(self.apps_page, "apps", "Apps", "view-app-grid-symbolic")
         toolbar.set_content(self.views)
         self.set_content(toolbar)
         self.free_before = None
@@ -856,6 +1374,8 @@ class Window(Adw.ApplicationWindow):
         if self.views.get_visible_child_name() == "explore":
             self.explorer.reload()
             self.update_free()
+        elif self.views.get_visible_child_name() == "apps":
+            self.apps_page.reload()
         else:
             self.scan()
 
@@ -936,7 +1456,7 @@ class Window(Adw.ApplicationWindow):
             lines.append(f"• {it.title} ({fmt_size(it.size)})")
             if it.confirm_note:
                 lines.append(f"   {it.confirm_note}")
-        dlg = Adw.AlertDialog(heading="Delete selected items?",
+        dlg = AlertDialog(heading="Delete selected items?",
                               body="This cannot be undone.\n\n" + "\n".join(lines))
         dlg.add_response("cancel", "Cancel")
         dlg.add_response("clean", "Clean")
@@ -965,7 +1485,7 @@ class Window(Adw.ApplicationWindow):
         failed = [(it, msg) for it, ok, msg in results if not ok]
         if failed:
             body = "\n".join(f"• {it.title}: {msg[:200]}" for it, msg in failed)
-            dlg = Adw.AlertDialog(heading="Some items failed", body=body)
+            dlg = AlertDialog(heading="Some items failed", body=body)
             dlg.add_response("ok", "OK")
             dlg.present(self)
         else:
@@ -986,7 +1506,7 @@ class App(Adw.Application):
         Gtk.Window.set_default_icon_name("local.opencleaner.OpenCleaner")
         # Brand: Trust Blue accent, Ubuntu font when installed (falls back to the system font)
         css = Gtk.CssProvider()
-        css.load_from_string(
+        load_css(css, 
             "@define-color accent_bg_color #2563EB;"
             "@define-color accent_color #2563EB;"
             "window { font-family: 'Ubuntu', sans-serif; }")

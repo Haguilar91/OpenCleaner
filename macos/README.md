@@ -13,6 +13,9 @@ confirmation list before cleaning.
   5 / 10 / 50 / 100 or all. A percentage shows while sizes are measured.
 - **Preview** a file before deleting it: images, start of text files, details, and a built-in
   **player for mp4, mp3, flac** and other audio/video. Reveal in Finder, Open, Move to Trash.
+- **Apps** page: apps in /Applications and ~/Applications with size and last used (from Spotlight),
+  sort by size / least or most recently used / name, Top 5 / 10 / 50 / 100, and **Uninstall** with a
+  review of the app plus its leftovers in ~/Library (**deleted permanently, not moved to the Trash**, with a warning; data folders start unticked).
 - **Review** the files inside a Clean item (eye button) before ticking it.
 
 ## Build and run

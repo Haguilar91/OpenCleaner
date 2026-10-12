@@ -1,0 +1,9 @@
+# OpenCleaner test image: fedora:42 with GTK, Xvfb and the test tools already installed.
+# Metadata never expires inside the image, so test runs do not download it again.
+FROM fedora:42
+RUN echo "metadata_expire=-1" >> /etc/dnf/dnf.conf \
+ && dnf -y -q install python3 python3-gobject gtk4 libadwaita xorg-x11-server-Xvfb xorg-x11-xauth \
+    ImageMagick dbus-daemon adwaita-icon-theme dejavu-sans-fonts tree xterm \
+ && dnf -y -q remove xterm \
+ && dnf -y -q makecache \
+ && printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/pkexec && chmod +x /usr/local/bin/pkexec

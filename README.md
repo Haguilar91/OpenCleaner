@@ -29,8 +29,19 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | **Disk map** (WinDirStat-style treemap, click to drill down) | yes | yes | yes* | yes* |
 | **Sort** by size, oldest, newest or file type, and show the **Top** 5 / 10 / 50 / 100 | yes | yes | yes* | yes* |
 | Progress percentage while sizes are measured | yes | yes | yes* | yes* |
+| **Apps**: installed apps with size and last used, sort and Top N | yes | yes | yes* | yes* |
+| **Uninstall** with a review of leftover files (permanent delete, with a warning) | system prompt only | yes | yes* | yes* |
 
 \* written but not yet built or run on that platform; see Status.
+
+Apps page: lists installed apps with their size and when they were last used, sortable by size,
+least or most recently used, or name, with the same Top 5 / 10 / 50 / 100 choice. On desktop,
+Uninstall shows the app plus its leftover files first (caches, preferences, settings folders;
+anything that may hold your data starts unticked) with a clear warning, and after you confirm
+**deletes the ticked items permanently: nothing goes to the Trash or Recycle Bin and it cannot be
+undone**. Android can only open the system's own uninstall prompt, which is permanent too. Last used
+comes from Spotlight on macOS, usage access on Android, and is approximate on Linux (program file
+access time) and Windows (Explorer's launch history).
 
 How the disk map works: it draws the current folder as colored blocks sized by space (folders,
 images, video, audio, documents, archives, other). Click a folder to open it, click a file to
@@ -80,8 +91,13 @@ Windows, WinForms (`windows/`):
 
 ## What they clean
 
-- **Linux:** pacman cache and orphans, systemd journal, unused Flatpak runtimes, browser
-  crash-recovery backups, large `~/.cache` folders, Trash, leftover Steam Proton prefixes.
+- **Linux:** detects the distro from `/etc/os-release` and uses its package manager. Arch family
+  (Arch, CachyOS, Omarchy): pacman cache and orphans. Debian family (Debian, Ubuntu, Linux Mint,
+  Raspberry Pi OS): APT cache, unused packages (autoremove), old Snap revisions. Fedora family
+  (Fedora, Rocky): DNF cache and unused packages. Image-based systems (Bazzite): system packages
+  are left alone (managed by image updates), Flatpak only. On every distro: systemd journal,
+  unused Flatpak runtimes, browser crash-recovery backups, large `~/.cache` folders, Trash, leftover
+  Steam Proton prefixes. The detected distro and package manager show in the header.
 - **macOS:** Homebrew, logs, app caches, Trash, Xcode data, simulators, iOS backups, Steam.
 - **Android:** own cache, thumbnails, old APKs, WhatsApp sent copies, large files, per-app sizes
   (limited by what Android allows without root).

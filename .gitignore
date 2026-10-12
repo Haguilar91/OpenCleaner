@@ -13,3 +13,4 @@ dist/
 .buildenv/
 *.spec
 .kotlin/
+linux-cachyos/tests/out/

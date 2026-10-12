@@ -2,6 +2,8 @@ package com.opencleaner.android
 
 import android.app.AppOpsManager
 import android.app.usage.StorageStatsManager
+import android.text.format.DateUtils
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -429,7 +431,27 @@ private fun StorageMap(entries: List<Entry>, onOpen: (Entry) -> Unit) {
 }
 
 // ---------------------------------------------------------------- apps
-private data class AppRow(val label: String, val pkg: String, val total: Long, val cache: Long, val data: Long)
+private data class AppRow(val label: String, val pkg: String, val total: Long, val cache: Long, val data: Long,
+                          val lastUsed: Long = 0)
+
+private enum class AppSort(val label: String) {
+    Biggest("Biggest first"), LeastUsed("Least recently used"), Recent("Recently used"), Name("Name")
+}
+
+/** Apps in the chosen order, cut to the top N (0 = all). Never-used apps (0) count as the oldest. */
+private fun arrangeApps(apps: List<AppRow>, sort: AppSort, top: Int): List<AppRow> {
+    val sorted = when (sort) {
+        AppSort.Biggest -> apps.sortedByDescending { it.total }
+        AppSort.LeastUsed -> apps.sortedBy { it.lastUsed }
+        AppSort.Recent -> apps.sortedByDescending { it.lastUsed }
+        AppSort.Name -> apps.sortedBy { it.label.lowercase() }
+    }
+    return if (top > 0) sorted.take(top) else sorted
+}
+
+private fun lastUsedText(ts: Long): String =
+    if (ts <= 0) "last used: unknown"
+    else "last used " + DateUtils.getRelativeTimeSpanString(ts, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS)
 
 private fun hasUsageAccess(ctx: Context): Boolean {
     val ops = ctx.getSystemService(AppOpsManager::class.java)
@@ -440,13 +462,21 @@ private fun hasUsageAccess(ctx: Context): Boolean {
 private fun loadApps(ctx: Context): List<AppRow> {
     val pm = ctx.packageManager
     val ssm = ctx.getSystemService(StorageStatsManager::class.java)
+    // last time each app was used (needs the Usage access permission the Apps tab already asks for)
+    val now = System.currentTimeMillis()
+    val used = try {
+        ctx.getSystemService(UsageStatsManager::class.java)
+            .queryAndAggregateUsageStats(now - 365L * DateUtils.DAY_IN_MILLIS, now)
+    } catch (e: Exception) { emptyMap() }
     return pm.getInstalledApplications(0)
         .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 || it.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP != 0 }
         .mapNotNull { a ->
             try {
                 val st = ssm.queryStatsForPackage(StorageManager.UUID_DEFAULT, a.packageName, Process.myUserHandle())
+                val u = used[a.packageName]
                 AppRow(pm.getApplicationLabel(a).toString(), a.packageName,
-                    st.appBytes + st.dataBytes + st.cacheBytes, st.cacheBytes, st.dataBytes)
+                    st.appBytes + st.dataBytes + st.cacheBytes, st.cacheBytes, st.dataBytes,
+                    maxOf(u?.lastTimeUsed ?: 0L, u?.lastTimeVisible ?: 0L))
             } catch (e: Exception) { null }
         }
         .sortedByDescending { it.total }
@@ -460,6 +490,9 @@ fun AppsScreen() {
     var refresh by remember { mutableIntStateOf(0) }
     var walk by remember { mutableStateOf<List<AppRow>>(emptyList()) }
     var walkIndex by remember { mutableIntStateOf(-1) }
+    var sort by remember { mutableStateOf(AppSort.Biggest) }
+    var top by remember { mutableIntStateOf(0) }
+    var uninstalled by remember { mutableStateOf(false) }   // came back from the system uninstall screen
 
     fun openApp(pkg: String) {
         ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
@@ -480,6 +513,7 @@ fun AppsScreen() {
 
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
         access = hasUsageAccess(ctx)
+        if (uninstalled) { uninstalled = false; refresh++ }
         if (walkIndex >= 0) { refresh++; advance() }   // back from an app's settings: open the next
     }
     LaunchedEffect(access, refresh) {
@@ -498,7 +532,7 @@ fun AppsScreen() {
         }
         return
     }
-    val list = apps
+    val list = apps?.let { arrangeApps(it, sort, top) }
     if (list == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -513,7 +547,7 @@ fun AppsScreen() {
                 TextButton(onClick = { walkIndex = -1 }) { Text("Stop") }
             }
         } else {
-            val big = list.filter { it.cache >= 5L * 1024 * 1024 }.sortedByDescending { it.cache }.take(15)
+            val big = (apps ?: emptyList()).filter { it.cache >= 5L * 1024 * 1024 }.sortedByDescending { it.cache }.take(15)
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { systemCleaner() }) { Text("Free up space") }
@@ -522,10 +556,34 @@ fun AppsScreen() {
                 }
             }
         }
-        Text("Tap an app to open its settings, where you can clear its cache or uninstall it.",
+        Text("Tap an app to open its settings, or the bin to uninstall it. Uninstalling is permanent and removes its data; Android asks you to confirm.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp, 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            var sortOpen by remember { mutableStateOf(false) }
+            var topOpen by remember { mutableStateOf(false) }
+            Box {
+                TextButton(onClick = { sortOpen = true }) { Text("Sort: ${sort.label} ▾") }
+                DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                    AppSort.values().forEach { m ->
+                        DropdownMenuItem(text = { Text(m.label) }, onClick = { sort = m; sortOpen = false })
+                    }
+                }
+            }
+            Box {
+                TextButton(onClick = { topOpen = true }) { Text("Show: ${if (top == 0) "All" else "Top $top"} ▾") }
+                DropdownMenu(expanded = topOpen, onDismissRequest = { topOpen = false }) {
+                    TOP_CHOICES.forEach { n ->
+                        DropdownMenuItem(text = { Text(if (n == 0) "All" else "Top $n") },
+                            onClick = { top = n; topOpen = false })
+                    }
+                }
+            }
+            Text("${apps?.size ?: 0} apps · ${fmt(apps?.sumOf { it.total } ?: 0)}",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(start = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         HorizontalDivider()
         LazyColumn(Modifier.fillMaxSize()) {
             items(list, key = { it.pkg }) { a ->
@@ -538,11 +596,15 @@ fun AppsScreen() {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("data ${fmt(a.data)} · cache ${fmt(a.cache)}",
+                        Text("data ${fmt(a.data)} · cache ${fmt(a.cache)} · ${lastUsedText(a.lastUsed)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(fmt(a.total))
+                    IconButton(onClick = {
+                        uninstalled = true
+                        ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${a.pkg}")))
+                    }) { Ico(R.drawable.ic_delete, "Uninstall ${a.label}") }
                 }
             }
         }

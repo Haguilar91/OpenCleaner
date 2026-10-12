@@ -1,0 +1,10 @@
+# OpenCleaner test image: ubuntu:24.04 with GTK, Xvfb and the test tools already installed.
+# xterm is installed then removed, so its libraries are cached and the install test is quick.
+FROM ubuntu:24.04
+RUN rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+    python3 python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 \
+    xvfb xauth imagemagick dbus adwaita-icon-theme fonts-dejavu-core tree xterm \
+ && apt-get remove -y -qq xterm \
+ && printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/pkexec && chmod +x /usr/local/bin/pkexec

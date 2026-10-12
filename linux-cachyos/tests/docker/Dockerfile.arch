@@ -1,0 +1,9 @@
+# OpenCleaner test image: Arch Linux ARM (community image, native arm64 on Apple silicon; Arch has no
+# official arm64 image). Same pacman code paths as Arch / CachyOS / Omarchy.
+FROM menci/archlinuxarm:base
+RUN sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf \
+ && (pacman-key --init && pacman-key --populate archlinuxarm) >/dev/null 2>&1 || true \
+ && pacman -Syu --noconfirm --needed python python-gobject python-cairo gtk4 libadwaita pacman-contrib \
+    xorg-server-xvfb xorg-xauth imagemagick dbus adwaita-icon-theme ttf-dejavu tree xterm \
+ && pacman -R --noconfirm xterm \
+ && printf '#!/bin/sh\nexec "$@"\n' > /usr/local/bin/pkexec && chmod +x /usr/local/bin/pkexec

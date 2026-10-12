@@ -21,6 +21,7 @@ struct OpenCleanerApp: App {
 struct RootView: View {
     @EnvironmentObject var store: CleanerStore
     @StateObject private var explorer = ExplorerModel()
+    @StateObject private var appsModel = AppsModel()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,8 +29,10 @@ struct RootView: View {
             Divider()
             if store.tab == 0 {
                 CleanView()
-            } else {
+            } else if store.tab == 1 {
                 ExplorerView(model: explorer)
+            } else {
+                AppsView(model: appsModel)
             }
         }
     }
@@ -45,10 +48,11 @@ struct RootView: View {
             Picker("", selection: $store.tab) {
                 Text("Clean").tag(0)
                 Text("Disk usage").tag(1)
+                Text("Apps").tag(2)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 230)
+            .frame(width: 300)
             Spacer()
             Text(store.freeText).font(.callout).foregroundStyle(.secondary)
         }
@@ -62,6 +66,8 @@ struct RootView: View {
         if store.tab == 1 {
             explorer.reload()
             store.updateFree()
+        } else if store.tab == 2 {
+            appsModel.load()
         } else {
             Task { await store.scan() }
         }

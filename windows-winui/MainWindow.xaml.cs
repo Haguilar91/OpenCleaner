@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
 
         var clean = new CleanView(UpdateFree);
         var disk = new DiskView(UpdateFree);
+        var appsPage = new AppsView(UpdateFree);
 
         var title = new TextBlock
         {
@@ -46,11 +47,13 @@ public sealed partial class MainWindow : Window
         var cleanItem = new NavigationViewItem { Content = "Clean", Icon = new SymbolIcon(Symbol.Delete), Tag = "clean" };
         var diskItem = new NavigationViewItem { Content = "Disk usage", Icon = new FontIcon { Glyph = "" }, Tag = "disk" };
         nav.MenuItems.Add(cleanItem);
+        var appsItem = new NavigationViewItem { Content = "Apps", Icon = new FontIcon { Glyph = "\uE71D" }, Tag = "apps" };
         nav.MenuItems.Add(diskItem);
+        nav.MenuItems.Add(appsItem);
         nav.SelectionChanged += (s, e) =>
         {
             var tag = (e.SelectedItem as NavigationViewItem)?.Tag as string;
-            host.Content = tag == "disk" ? disk : clean;
+            host.Content = tag == "disk" ? disk : tag == "apps" ? appsPage : clean;
         };
         nav.SelectedItem = cleanItem;
 

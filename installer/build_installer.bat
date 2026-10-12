@@ -1,6 +1,6 @@
 @echo off
 rem Builds the WinUI app and wraps it in dist\OpenCleaner-Setup-<arch>.exe with Inno Setup.
-rem   build_installer.bat [x64|arm64|x86] [version]      (default: this PC's architecture, 1.0)
+rem   build_installer.bat [x64|arm64|x86] [version]      (default: this PC's architecture, 1.2)
 rem Needs the .NET 8 SDK and Inno Setup 6:
 rem   winget install Microsoft.DotNet.SDK.8
 rem   winget install JRSoftware.InnoSetup
@@ -17,11 +17,19 @@ if /i not "%ARCH%"=="x64" if /i not "%ARCH%"=="arm64" if /i not "%ARCH%"=="x86" 
   exit /b 1
 )
 set VERSION=%~2
-if "%VERSION%"=="" set VERSION=1.0
+if "%VERSION%"=="" set VERSION=1.2
 
-set ISCC=
-for %%P in ("%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe") do (
-  if exist %%P set ISCC=%%~P
+rem ISCC may be set beforehand; otherwise look in the usual places, including a per-user
+rem install under any profile (builds started remotely run as a different account)
+if not defined ISCC (
+  for %%P in ("%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" "%ProgramFiles%\Inno Setup 6\ISCC.exe") do (
+    if exist %%P set "ISCC=%%~P"
+  )
+)
+if not defined ISCC (
+  for /d %%U in ("%SystemDrive%\Users\*") do (
+    if exist "%%~U\AppData\Local\Programs\Inno Setup 6\ISCC.exe" set "ISCC=%%~U\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+  )
 )
 if "%ISCC%"=="" (
   echo Inno Setup not found. Install it with:  winget install JRSoftware.InnoSetup

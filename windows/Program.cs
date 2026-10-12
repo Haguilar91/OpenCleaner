@@ -18,6 +18,11 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Reflection;
 
+[assembly: AssemblyTitle("OpenCleaner")]
+[assembly: AssemblyProduct("OpenCleaner")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
+
 namespace OpenCleaner
 {
     // ------------------------------------------------------------------ model
@@ -1010,6 +1015,351 @@ namespace OpenCleaner
         }
     }
 
+    // ------------------------------------------------------------------ installed programs
+    class AppEntry
+    {
+        public string KeyPath, Name, Publisher, Version, InstallLocation, UninstallString;
+        public long Size = -1;                          // bytes, -1 = not known yet
+        public DateTime LastUsed = DateTime.MinValue;   // MinValue = unknown
+    }
+
+    class LeftoverItem
+    {
+        public string Path, Detail;
+        public long Size;
+        public bool Selected;
+    }
+
+    // Installed programs (the same list as Settings > Apps), their size, when they were last used, the
+    // folders they leave behind, and how to remove them.
+    static class Apps
+    {
+        const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+
+        public static List<AppEntry> Installed()
+        {
+            List<AppEntry> list = new List<AppEntry>();
+            Dictionary<string, bool> seen = new Dictionary<string, bool>();
+            Read(Registry.LocalMachine, UninstallKey, list, seen);
+            Read(Registry.LocalMachine, @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", list, seen);
+            Read(Registry.CurrentUser, UninstallKey, list, seen);
+            return list;
+        }
+
+        static void Read(RegistryKey hive, string path, List<AppEntry> list, Dictionary<string, bool> seen)
+        {
+            try
+            {
+                using (RegistryKey k = hive.OpenSubKey(path))
+                {
+                    if (k == null) return;
+                    foreach (string sub in k.GetSubKeyNames())
+                    {
+                        using (RegistryKey a = k.OpenSubKey(sub))
+                        {
+                            if (a == null) continue;
+                            string name = a.GetValue("DisplayName") as string;
+                            string us = a.GetValue("UninstallString") as string;
+                            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(us)) continue;
+                            object sys = a.GetValue("SystemComponent");
+                            if (sys is int && (int)sys == 1) continue;
+                            if (a.GetValue("ParentKeyName") != null) continue;          // updates and patches
+                            string rel = a.GetValue("ReleaseType") as string;
+                            if (rel == "Update" || rel == "Hotfix" || rel == "Security Update") continue;
+                            string ver = (a.GetValue("DisplayVersion") as string) ?? "";
+                            string id = name + "|" + ver;
+                            if (seen.ContainsKey(id)) continue;
+                            seen[id] = true;
+
+                            AppEntry e = new AppEntry();
+                            e.KeyPath = (hive == Registry.CurrentUser ? "HKCU\\" : "HKLM\\") + path + "\\" + sub;
+                            e.Name = name.Trim();
+                            e.Publisher = (a.GetValue("Publisher") as string) ?? "";
+                            e.Version = ver;
+                            e.UninstallString = us;
+                            e.InstallLocation = LocationOf(a);
+                            object est = a.GetValue("EstimatedSize");
+                            if (est is int && (int)est > 0) e.Size = (long)(int)est * 1024;
+                            list.Add(e);
+                        }
+                    }
+                }
+            }
+            catch (Exception) { }
+        }
+
+        // Where the program lives: InstallLocation, else the folder of its icon.
+        static string LocationOf(RegistryKey a)
+        {
+            string loc = (a.GetValue("InstallLocation") as string ?? "").Trim().Trim('"').TrimEnd('\\');
+            if (loc.Length < 4 || !Directory.Exists(loc))
+            {
+                string icon = (a.GetValue("DisplayIcon") as string ?? "").Trim().Trim('"');
+                int comma = icon.LastIndexOf(',');
+                if (comma > 2) icon = icon.Substring(0, comma);
+                try { loc = icon.Length > 3 ? System.IO.Path.GetDirectoryName(icon) : ""; }
+                catch (Exception) { loc = ""; }
+            }
+            return IsSafeLocation(loc) ? loc : "";
+        }
+
+        // Only program folders, never a drive root or the Windows folder.
+        static bool IsSafeLocation(string p)
+        {
+            if (string.IsNullOrEmpty(p) || !Directory.Exists(p)) return false;
+            string full = System.IO.Path.GetFullPath(p).TrimEnd('\\');
+            string win = Environment.GetFolderPath(Environment.SpecialFolder.Windows).TrimEnd('\\');
+            if (full.Length < 4 || full.StartsWith(win, StringComparison.OrdinalIgnoreCase)) return false;
+            string[] roots =
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)
+            };
+            foreach (string r in roots)
+                if (r.Length > 3 && full.StartsWith(r.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)
+                    && full.Length > r.TrimEnd('\\').Length + 1) return true;
+            return false;
+        }
+
+        // Fills in a size for programs that do not report one.
+        public static void Measure(AppEntry e)
+        {
+            if (e.Size > 0 || e.InstallLocation.Length == 0) return;
+            e.Size = Util.Size(e.InstallLocation);
+        }
+
+        // Windows keeps no "last used" date for programs. The nearest thing is the UserAssist list
+        // (what Explorer launched, per user): take the newest launch of anything inside the install folder.
+        public static void FillLastUsed(List<AppEntry> apps)
+        {
+            Dictionary<string, DateTime> runs = UserAssist();
+            foreach (AppEntry a in apps)
+            {
+                if (a.InstallLocation.Length == 0) continue;
+                string prefix = a.InstallLocation.TrimEnd('\\') + "\\";
+                DateTime best = DateTime.MinValue;
+                foreach (KeyValuePair<string, DateTime> kv in runs)
+                    if (kv.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && kv.Value > best) best = kv.Value;
+                a.LastUsed = best;
+            }
+        }
+
+        static string Rot13(string s)
+        {
+            char[] c = s.ToCharArray();
+            for (int i = 0; i < c.Length; i++)
+            {
+                char ch = c[i];
+                if (ch >= 'a' && ch <= 'z') c[i] = (char)((ch - 'a' + 13) % 26 + 'a');
+                else if (ch >= 'A' && ch <= 'Z') c[i] = (char)((ch - 'A' + 13) % 26 + 'A');
+            }
+            return new string(c);
+        }
+
+        static Dictionary<string, DateTime> UserAssist()
+        {
+            Dictionary<string, DateTime> result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> known = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            known["{6D809377-6AF0-444B-8957-A3773F02200E}"] = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            known["{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}"] = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            known["{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}"] = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            known["{3EB685DB-65F9-4CF6-A03A-E3EF65729F3D}"] = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            known["{905E63B6-C1BF-494E-B29C-65B732D3D21A}"] = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            try
+            {
+                using (RegistryKey ua = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist"))
+                {
+                    if (ua == null) return result;
+                    foreach (string guid in ua.GetSubKeyNames())
+                    {
+                        using (RegistryKey count = ua.OpenSubKey(guid + "\\Count"))
+                        {
+                            if (count == null) continue;
+                            foreach (string raw in count.GetValueNames())
+                            {
+                                byte[] data = count.GetValue(raw) as byte[];
+                                if (data == null || data.Length < 68) continue;
+                                long ft = BitConverter.ToInt64(data, 60);                // last run, FILETIME
+                                if (ft <= 0) continue;
+                                string path = Rot13(raw);
+                                int close = path.IndexOf('}');
+                                if (path.StartsWith("{") && close > 0)
+                                {
+                                    string repl;
+                                    if (known.TryGetValue(path.Substring(0, close + 1), out repl))
+                                        path = repl + path.Substring(close + 1);
+                                }
+                                DateTime when;
+                                try { when = DateTime.FromFileTime(ft); } catch (Exception) { continue; }
+                                DateTime old;
+                                if (!result.TryGetValue(path, out old) || when > old) result[path] = when;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception) { }
+            return result;
+        }
+
+        // Folders the program leaves in AppData and ProgramData. Strict matches only: the program's
+        // exact name (or Publisher\Name), or the name of its install folder.
+        public static List<LeftoverItem> Leftovers(AppEntry a)
+        {
+            List<LeftoverItem> found = new List<LeftoverItem>();
+            List<string> names = new List<string>();
+            names.Add(a.Name);
+            if (a.InstallLocation.Length > 0)
+            {
+                string leaf = System.IO.Path.GetFileName(a.InstallLocation);
+                if (leaf.Length >= 4 && !names.Contains(leaf)) names.Add(leaf);
+            }
+            string[] roots =
+            {
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)
+            };
+            string[] labels = { "AppData\\Roaming (settings)", "AppData\\Local (cache and data)", "ProgramData" };
+            for (int i = 0; i < roots.Length; i++)
+            {
+                List<string> candidates = new List<string>();
+                foreach (string n in names)
+                {
+                    candidates.Add(System.IO.Path.Combine(roots[i], n));
+                    if (a.Publisher.Length > 0) candidates.Add(System.IO.Path.Combine(System.IO.Path.Combine(roots[i], a.Publisher), n));
+                }
+                foreach (string c in candidates)
+                {
+                    try
+                    {
+                        if (!Directory.Exists(c) || (File.GetAttributes(c) & FileAttributes.ReparsePoint) != 0) continue;
+                        LeftoverItem it = new LeftoverItem();
+                        it.Path = c;
+                        it.Detail = labels[i];
+                        it.Size = Util.Size(c);
+                        it.Selected = i == 1;       // Local is mostly cache; Roaming and ProgramData may hold settings
+                        found.Add(it);
+                    }
+                    catch (Exception) { }
+                }
+            }
+            return found;
+        }
+
+        // The command Windows would run: an MSI "/I" (install) entry becomes "/X" (uninstall).
+        static string Command(AppEntry a)
+        {
+            string us = a.UninstallString.Trim();
+            if (us.IndexOf("msiexec", StringComparison.OrdinalIgnoreCase) >= 0)
+                us = Regex.Replace(us, @"/I(?=\{)", "/X", RegexOptions.IgnoreCase);
+            return us;
+        }
+
+        // Runs the program's own uninstaller (it shows its own window and may ask for administrator)
+        // and waits. Returns an error message, or null when it finished.
+        public static string RunUninstaller(AppEntry a)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + Command(a) + "\"");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                using (Process p = Process.Start(psi))
+                {
+                    p.WaitForExit();
+                    if (p.ExitCode != 0 && p.ExitCode != 3010 && p.ExitCode != 1641)
+                        return "The uninstaller finished with code " + p.ExitCode + " (cancelled or failed).";
+                }
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        // Permanently deletes a leftover folder (not the Recycle Bin), only inside AppData, ProgramData or the install folder.
+        public static string RemoveLeftover(AppEntry a, string path)
+        {
+            string full;
+            try { full = System.IO.Path.GetFullPath(path).TrimEnd('\\'); }
+            catch (Exception ex) { return ex.Message; }
+            List<string> roots = new List<string>();
+            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+            roots.Add(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+            if (a.InstallLocation.Length > 0) roots.Add(a.InstallLocation);
+            bool ok = false;
+            foreach (string r in roots)
+            {
+                string rr = r.TrimEnd('\\');
+                if (rr.Length > 3 && (full.StartsWith(rr + "\\", StringComparison.OrdinalIgnoreCase)
+                    || (a.InstallLocation.Length > 0 && full.Equals(rr, StringComparison.OrdinalIgnoreCase)
+                        && rr.Equals(a.InstallLocation.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))) ok = true;
+            }
+            if (!ok) return "Refused: outside the allowed folders";
+            try { Directory.Delete(full, true); return null; }
+            catch (Exception ex) { return ex.Message; }
+        }
+    }
+
+    // Review before uninstalling: lists leftover folders with checkboxes. Nothing happens until Delete.
+    class UninstallForm : Form
+    {
+        public List<string> Picked = new List<string>();
+        readonly CheckedListBox box = new CheckedListBox();
+        readonly List<LeftoverItem> items;
+
+        public UninstallForm(AppEntry app, List<LeftoverItem> left)
+        {
+            items = left;
+            Text = "Uninstall " + app.Name + "?";
+            Font = new Font("Segoe UI", 9f);
+            ClientSize = new Size(620, 400);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+
+            Label note = new Label();
+            note.Dock = DockStyle.Top; note.Height = 74;
+            note.Padding = new Padding(10, 8, 10, 0);
+            note.ForeColor = Color.Firebrick;
+            note.Text = "WARNING: this deletes permanently. Nothing goes to the Recycle Bin and it cannot be undone.\r\n"
+                      + "Windows runs the program's own uninstaller (it may ask for administrator), then the ticked folders are deleted. "
+                      + "Roaming and ProgramData folders may hold settings, so they start unticked.";
+
+            box.Dock = DockStyle.Fill;
+            box.CheckOnClick = true;
+            box.BorderStyle = BorderStyle.None;
+            foreach (LeftoverItem it in left)
+                box.Items.Add(it.Path + "   (" + Util.Fmt(it.Size) + ", " + it.Detail + ")", it.Selected);
+            if (left.Count == 0) box.Items.Add("No leftover folders found.", false);
+
+            Panel bar = new Panel();
+            bar.Dock = DockStyle.Bottom; bar.Height = 46;
+            Button go = new Button();
+            go.Text = "Delete"; go.SetBounds(430, 8, 84, 30);
+            go.ForeColor = Color.Firebrick;
+            go.Click += delegate
+            {
+                for (int i = 0; i < items.Count && i < box.Items.Count; i++)
+                    if (box.GetItemChecked(i)) Picked.Add(items[i].Path);
+                DialogResult = DialogResult.OK;
+            };
+            Button cancel = new Button();
+            cancel.Text = "Cancel"; cancel.SetBounds(522, 8, 84, 30);
+            cancel.DialogResult = DialogResult.Cancel;
+            bar.Controls.Add(go); bar.Controls.Add(cancel);
+            CancelButton = cancel;
+
+            Controls.Add(box);
+            Controls.Add(note);
+            Controls.Add(bar);
+            box.BringToFront();
+        }
+    }
+
     class MainForm : Form
     {
         readonly bool isAdmin = Util.IsAdmin();
@@ -1042,6 +1392,14 @@ namespace OpenCleaner
         ProgressBar diskProgress = new ProgressBar();
         MapPanel mapPanel = new MapPanel();
         int measured, itemCount;
+
+        // Apps tab
+        ListView appList = new ListView();
+        ComboBox appSortBox = new ComboBox(), appTopBox = new ComboBox();
+        Label appStatus = new Label();
+        Button appUninstallBtn = new Button(), appRescanBtn = new Button();
+        List<AppEntry> appEntries = new List<AppEntry>();
+        int appGen, appMeasured, appToMeasure;
         static readonly int[] TopCounts = { 0, 5, 10, 50, 100 };     // 0 = all
 
         public MainForm()
@@ -1078,14 +1436,17 @@ namespace OpenCleaner
             TabPage diskTab = new TabPage("Disk usage");
             tabs.TabPages.Add(cleanTab);
             tabs.TabPages.Add(diskTab);
+            TabPage appsTab = new TabPage("Apps");
+            tabs.TabPages.Add(appsTab);
             Controls.Add(header);
             Controls.Add(tabs);
             tabs.BringToFront();     // docking runs back to front: the Fill control goes last
 
             BuildCleanTab(cleanTab);
             BuildDiskTab(diskTab);
+            BuildAppsTab(appsTab);
             UpdateFree();
-            Shown += delegate { Scan(); LoadDisk(Environment.GetEnvironmentVariable("USERPROFILE")); };
+            Shown += delegate { Scan(); LoadDisk(Environment.GetEnvironmentVariable("USERPROFILE")); LoadApps(); };
 
             // Layout above is in 96 DPI pixels; scale it to the screen (fonts already scale on their own).
             AutoScaleDimensions = new SizeF(96f, 96f);
@@ -1338,6 +1699,186 @@ namespace OpenCleaner
                 Close();
             }
             catch (Win32Exception) { /* user cancelled the UAC prompt */ }
+        }
+
+        // ---------------------------------------------------------- apps tab
+        void BuildAppsTab(TabPage page)
+        {
+            Panel tools = new Panel();
+            tools.Dock = DockStyle.Top; tools.Height = 40;
+            Label sortLabel = new Label(); sortLabel.Text = "Sort:"; sortLabel.SetBounds(10, 12, 34, 20);
+            appSortBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            appSortBox.Items.AddRange(new object[] { "Biggest first", "Least recently used", "Recently used", "Name" });
+            appSortBox.SelectedIndex = 0; appSortBox.SetBounds(46, 8, 150, 28);
+            Label topLabel = new Label(); topLabel.Text = "Show:"; topLabel.SetBounds(206, 12, 40, 20);
+            appTopBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            appTopBox.Items.AddRange(new object[] { "All", "Top 5", "Top 10", "Top 50", "Top 100" });
+            appTopBox.SelectedIndex = 0; appTopBox.SetBounds(248, 8, 80, 28);
+            appSortBox.SelectedIndexChanged += delegate { RenderApps(); };
+            appTopBox.SelectedIndexChanged += delegate { RenderApps(); };
+            appRescanBtn.Text = "Rescan"; appRescanBtn.SetBounds(340, 7, 80, 28);
+            appRescanBtn.Click += delegate { LoadApps(); };
+            appUninstallBtn.Text = "Uninstall..."; appUninstallBtn.SetBounds(430, 7, 100, 28);
+            appUninstallBtn.Enabled = false;
+            appUninstallBtn.Click += delegate { UninstallSelected(); };
+            tools.Controls.Add(sortLabel); tools.Controls.Add(appSortBox);
+            tools.Controls.Add(topLabel); tools.Controls.Add(appTopBox);
+            tools.Controls.Add(appRescanBtn); tools.Controls.Add(appUninstallBtn);
+
+            appList.Dock = DockStyle.Fill;
+            appList.View = View.Details;
+            appList.FullRowSelect = true;
+            appList.MultiSelect = false;
+            appList.Font = new Font("Segoe UI", 10f);
+            appList.BorderStyle = BorderStyle.None;
+            appList.SmallImageList = RowHeight(S(28));
+            appList.Columns.Add("Program", S(380));
+            appList.Columns.Add("Last used", S(150));
+            appList.Columns.Add("Size", S(110), HorizontalAlignment.Right);
+            appList.Resize += delegate
+            {
+                int w = appList.ClientSize.Width - S(150) - S(110) - 4;
+                if (w > S(150)) appList.Columns[0].Width = w;
+            };
+            appList.SelectedIndexChanged += delegate { appUninstallBtn.Enabled = appList.SelectedItems.Count > 0; };
+            appList.DoubleClick += delegate { UninstallSelected(); };
+
+            Panel bottom = new Panel();
+            bottom.Dock = DockStyle.Bottom; bottom.Height = 34;
+            appStatus.SetBounds(10, 6, 800, 24);
+            appStatus.ForeColor = Color.DimGray;
+            bottom.Controls.Add(appStatus);
+
+            page.Controls.Add(appList);
+            page.Controls.Add(tools);
+            page.Controls.Add(bottom);
+            appList.BringToFront();
+        }
+
+        async void LoadApps()
+        {
+            int myGen = ++appGen;
+            appStatus.Text = "Reading installed programs...";
+            List<AppEntry> found = await Task.Run(() =>
+            {
+                List<AppEntry> l = Apps.Installed();
+                Apps.FillLastUsed(l);
+                return l;
+            });
+            if (myGen != appGen) return;
+            appEntries = found;
+            RenderApps();
+
+            // sizes that Windows does not report are measured from the install folder
+            List<AppEntry> pending = found.Where(a => a.Size <= 0 && a.InstallLocation.Length > 0).ToList();
+            appToMeasure = pending.Count; appMeasured = 0;
+            if (pending.Count == 0) return;
+            await Task.Run(() =>
+            {
+                Parallel.ForEach(pending, new ParallelOptions { MaxDegreeOfParallelism = 4 }, a =>
+                {
+                    if (appGen != myGen) return;
+                    Apps.Measure(a);
+                    try
+                    {
+                        BeginInvoke(new Action(() =>
+                        {
+                            if (appGen != myGen) return;
+                            appMeasured++;
+                            if (appMeasured == appToMeasure || appMeasured % 5 == 0) RenderApps();
+                        }));
+                    }
+                    catch (Exception) { }
+                });
+            });
+        }
+
+        static string Ago(DateTime d)
+        {
+            if (d == DateTime.MinValue) return "unknown";
+            double days = (DateTime.Now - d).TotalDays;
+            if (days < 1) return "today";
+            if (days < 2) return "yesterday";
+            if (days < 60) return (int)days + " days ago";
+            if (days < 730) return (int)(days / 30) + " months ago";
+            return (int)(days / 365) + " years ago";
+        }
+
+        // Programs in the chosen order, cut to the top N.
+        List<AppEntry> OrderedApps()
+        {
+            List<AppEntry> list = new List<AppEntry>(appEntries);
+            switch (appSortBox.SelectedIndex)
+            {
+                case 1: list.Sort((a, b) => a.LastUsed.CompareTo(b.LastUsed)); break;
+                case 2: list.Sort((a, b) => b.LastUsed.CompareTo(a.LastUsed)); break;
+                case 3: list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase)); break;
+                default: list.Sort((a, b) => b.Size.CompareTo(a.Size)); break;
+            }
+            int n = TopCounts[appTopBox.SelectedIndex < 0 ? 0 : appTopBox.SelectedIndex];
+            if (n > 0 && list.Count > n) list = list.GetRange(0, n);
+            return list;
+        }
+
+        void RenderApps()
+        {
+            string keep = appList.SelectedItems.Count > 0 ? appList.SelectedItems[0].Name : null;
+            appList.BeginUpdate();
+            appList.Items.Clear();
+            foreach (AppEntry a in OrderedApps())
+            {
+                ListViewItem lvi = new ListViewItem(a.Name + (a.Version.Length > 0 ? "  " + a.Version : ""));
+                lvi.Name = a.KeyPath;
+                lvi.SubItems.Add(Ago(a.LastUsed));
+                lvi.SubItems.Add(a.Size > 0 ? Util.Fmt(a.Size) : "...");
+                appList.Items.Add(lvi);
+                if (a.KeyPath == keep) lvi.Selected = true;
+            }
+            appList.EndUpdate();
+            long total = 0;
+            foreach (AppEntry a in appEntries) if (a.Size > 0) total += a.Size;
+            string pct = appToMeasure > 0 && appMeasured < appToMeasure
+                ? "Measuring " + (appMeasured * 100 / appToMeasure) + "% (" + appMeasured + " of " + appToMeasure + ")  |  " : "";
+            appStatus.Text = pct + appEntries.Count + " programs  |  " + Util.Fmt(total) + "  |  last used is approximate";
+        }
+
+        // Review first: the program's own uninstaller runs, then the ticked leftover folders are deleted permanently.
+        async void UninstallSelected()
+        {
+            if (appList.SelectedItems.Count == 0 || busy) return;
+            string key = appList.SelectedItems[0].Name;
+            AppEntry app = appEntries.FirstOrDefault(a => a.KeyPath == key);
+            if (app == null) return;
+            List<LeftoverItem> left = await Task.Run(() => Apps.Leftovers(app));
+            List<string> picked;
+            using (UninstallForm f = new UninstallForm(app, left))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) return;
+                picked = f.Picked;
+            }
+            SetBusy(true, "Uninstalling " + app.Name + "...");
+            string err = await Task.Run(() => Apps.RunUninstaller(app));
+            if (err != null)
+            {
+                SetBusy(false, "");
+                MessageBox.Show(this, err, "Uninstall");
+                return;
+            }
+            if (app.InstallLocation.Length > 0 && Directory.Exists(app.InstallLocation)) picked.Add(app.InstallLocation);
+            List<string> failed = new List<string>();
+            int moved = 0;
+            foreach (string p in picked)
+            {
+                string path = p;
+                string e = await Task.Run(() => Apps.RemoveLeftover(app, path));
+                if (e == null) moved++; else failed.Add(p + ": " + e);
+            }
+            SetBusy(false, "");
+            string msg = app.Name + " was uninstalled." + (moved > 0 ? " " + moved + " folder(s) deleted." : "");
+            if (failed.Count > 0) msg += "\n\nCould not remove:\n" + string.Join("\n", failed.ToArray());
+            MessageBox.Show(this, msg, "Uninstall finished");
+            UpdateFree();
+            LoadApps();
         }
 
         // ---------------------------------------------------------- disk usage tab

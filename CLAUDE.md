@@ -20,12 +20,12 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 
 | App | State |
 |---|---|
-| Linux | Run and tested on CachyOS (GNOME) |
-| macOS | Builds on a Mac (needed fixes for Command Line Tools only builds, see pitfalls); cleaning flows not fully tested |
-| Windows WinForms | Runs and scans on Windows 11 (125% scaling); cleaning not fully tested |
-| Windows WinUI 3 | Builds and runs on Windows 11. Needs `app.manifest` (PerMonitorV2 DPI + Win10 supportedOS) or it renders blurry and the mouse wheel does not scroll |
-| Android | Builds (debug APK), runs on a Pixel; features work per the user |
-| Linux binary | `build_binary.sh` makes a ~100 MB PyInstaller single file that runs here; untested on other distros |
+| Linux | Release 1.2. Distro logic tested in Docker (Debian 12/13, Ubuntu 24.04, Fedora 42, Rocky 9, Arch ARM + x86_64) and read-only on a real Fedora 44 laptop; real window walked through under Xvfb (Debian 12, Ubuntu, Fedora, Arch). Real cleaning/uninstall and the CachyOS laptop not retested since the distro work |
+| macOS | 1.2 builds and runs (preview, player and map tried by the user; Apps page rendered here with real apps); cleaning and uninstall flows not fully tested |
+| Windows WinForms | 1.2 compiles in the UTM VM (Windows 11 ARM64); the new preview, map, sort and Apps page have not been run |
+| Windows WinUI 3 | 1.2 compiles and the x64/arm64/x86 Inno Setup installers build in the VM; the new features have not been run. Needs `app.manifest` (PerMonitorV2 DPI + Win10 supportedOS) or it renders blurry and the mouse wheel does not scroll |
+| Android | 1.2 (versionCode 11) debug APK; preview, player and map tried on a Pixel; sort/Top and Apps sort are new |
+| Linux binary | `build_release_docker.sh`: x86_64 + arm64 single files (~28 MB, Debian 12 base). Open the window on systems without GTK/Python (need the host's Wayland/X11/GL libs). Media playback inside the binary untested |
 
 Highest-value next steps: exercise the real cleaning flows on Windows (WinForms and WinUI) and
 macOS with actual junk; add Steam rows (shader cache, browser cache, partial downloads) to the Linux app (macOS and
@@ -37,7 +37,7 @@ Windows already have them).
   file, size/date/location, Open, Delete/Trash); in Clean, each item with files has a Review list
   whose files open the same preview. Android: `PreviewDialog`/`ReviewDialog` in `Screens.kt`;
   macOS: `Preview.swift`; Linux: `show_preview`/`show_review`; WinForms: `PreviewForm`/`ReviewForm`;
-  WinUI: `Preview.cs`. macOS preview also plays mp4/mp3/flac (AppKit AVPlayerView; SwiftUI VideoPlayer crashes on macOS 27). Disk map (treemap), sort + Top 5/10/50/100 and measuring-progress % exist in Android, macOS, Linux, WinForms and WinUI (WinForms has no media player). Not yet compiled/run: Linux, WinForms, WinUI (all of the above was written blind).
+  WinUI: `Preview.cs`. macOS preview also plays mp4/mp3/flac (AppKit AVPlayerView; SwiftUI VideoPlayer crashes on macOS 27). Disk map (treemap), sort + Top 5/10/50/100 and measuring-progress % exist in Android, macOS, Linux, WinForms and WinUI (WinForms has no media player). Apps page (installed apps, size, last used, sort + Top N, uninstall with leftover review): Android (system uninstall prompt only), macOS (`AppsView.swift`), Linux (`AppsPage`, pacman + Flatpak), Windows (`Apps` class registry-based; the same code lives in `windows/Program.cs` and `windows-winui/AppsCore.cs`, keep in sync). Uninstall deletes PERMANENTLY (no Trash/Recycle Bin, by the user's choice) after a review dialog with a clear warning, and only inside the allowed folders (macOS: /Applications, ~/Applications, ~/Library; Linux: home; Windows: AppData, ProgramData, the install folder). The Linux app detects the distro (`detect_distro`, `build_scanners`): Arch/CachyOS/Omarchy = pacman, Debian/Ubuntu/Mint/Raspbian = apt (+ Snap), Fedora/Rocky = dnf, Bazzite = image-based (no system package ops, Flatpak only); detection logic is unit-checked, the per-distro scanners are not yet run on those distros. Not yet compiled/run: Linux, WinForms, WinUI (all of the above was written blind).
 
 - **Nothing is deleted until the user ticks items and confirms** in a dialog listing them.
 - **Every category always shows a row**: "Clean" (green) when nothing to remove, "Scan failed"
@@ -89,6 +89,24 @@ Windows already have them).
   and "Usage access" permissions are granted by the user in Settings.
 - Android build recipe that worked: JDK 17, Gradle 8.7, AGP 8.5.2, Kotlin 2.0.20 (Compose compiler
   plugin), compileSdk/targetSdk 34, minSdk 30, Compose BOM 2024.09.03.
+- **Linux testing uses Docker** (`linux-cachyos/tests/`, see its README): `run_docker_tests.sh` runs the
+  distro logic against real apt/dnf/pacman (Debian 12/13, Ubuntu 24.04, Fedora 42, Rocky 9, Arch Linux ARM)
+  in pre-built images `opencleaner-test:<name>` (three in parallel),
+  `run_docker_gui.sh` launches the real window under Xvfb and saves screenshots. Keep the images cached;
+  start Docker Desktop to test and quit it afterwards. Rocky 9 has Python 3.9, so `opencleaner.py` needs
+  `from __future__ import annotations` for the `X | None` hints.
+- **Linux app supports GTK 4.8 / libadwaita 1.2** (Debian 12, Raspberry Pi OS) through small shims at the
+  top of `opencleaner.py` (`AlertDialog`, `Dialog`, `ToolbarView`, `launch_file`, `load_css`). Use those
+  names, never `Adw.AlertDialog` / `Adw.Dialog` / `Adw.ToolbarView` / `Gtk.FileLauncher` directly.
+- The Windows VM in UTM ("Windows") can run commands from the Mac: `utmctl exec Windows --cmd ...`
+  returns at once (write output to a file, then `utmctl file pull`); dotnet is at
+  `C:\Program Files\dotnet\dotnet.exe` (not on that session's PATH). No desktop/screenshots from there.
+  Commands run as SYSTEM: NuGet downloads fail there, so set `NUGET_PACKAGES=C:\Users\Hector\.nuget\packages`;
+  Inno Setup is found under `C:\Users\Hector\AppData\Local\Programs\Inno Setup 6` (build_installer.bat looks there).
+  To get files out, copy them to the shared folder at `\\localhost@9843\DavWWWRoot` (= `~/Winshared` on the Mac,
+  seconds); `utmctl file pull` works but is very slow for large files.
+- Release builds: `linux-cachyos/build_release_docker.sh <version>` (x86_64 + arm64 single-file binaries, Debian 12
+  base; they need the host's display libraries, which every desktop has). Outputs go to `dist/release-<version>/`.
 - Dialogs and prompts that need passwords, tokens or license acceptance (sudo, SDK licenses, git
   push) are done by the user, never by Claude.
 
