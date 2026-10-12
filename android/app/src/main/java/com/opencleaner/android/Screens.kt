@@ -22,6 +22,9 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -240,7 +243,8 @@ fun StorageScreen(onChanged: () -> Unit) {
     var path by remember { mutableStateOf(root) }
     var entries by remember { mutableStateOf<List<Entry>>(emptyList()) }
     var reload by remember { mutableIntStateOf(0) }
-    var toDelete by remember { mutableStateOf<File?>(null) }
+    var toDelete by remember { mutableStateOf<List<File>>(emptyList()) }   // waiting for confirmation
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }    // ticked rows / long-pressed blocks
     var preview by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var mapMode by remember { mutableStateOf(false) }
@@ -315,8 +319,12 @@ fun StorageScreen(onChanged: () -> Unit) {
             }
         }
         HorizontalDivider()
+        fun toggle(e: Entry) {
+            selected = if (e.file.path in selected) selected - e.file.path else selected + e.file.path
+        }
+        Box(Modifier.weight(1f)) {
         if (mapMode) {
-            StorageMap(visible) { e -> if (e.file.isDirectory) path = e.file else preview = e.file }
+            StorageMap(visible, selected, onToggle = ::toggle) { e -> if (e.file.isDirectory) path = e.file else preview = e.file }
         } else
         LazyColumn(Modifier.fillMaxSize()) {
             items(visible, key = { it.file.path }) { e ->
@@ -326,13 +334,14 @@ fun StorageScreen(onChanged: () -> Unit) {
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = e.file.path in selected, onCheckedChange = { toggle(e) })
                         Ico(if (e.file.isDirectory) R.drawable.ic_folder else R.drawable.ic_file)
                         Spacer(Modifier.width(8.dp))
                         Text(e.file.name, modifier = Modifier.weight(1f), maxLines = 1,
                             overflow = TextOverflow.Ellipsis)
                         Text(if (e.size == null) "…" else fmt(e.size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        IconButton(onClick = { toDelete = e.file }) { Ico(R.drawable.ic_delete, "Delete") }
+                        IconButton(onClick = { toDelete = listOf(e.file) }) { Ico(R.drawable.ic_delete, "Delete") }
                     }
                     LinearProgressIndicator(
                         progress = { (e.size ?: 0).toFloat() / maxSize },
@@ -341,30 +350,49 @@ fun StorageScreen(onChanged: () -> Unit) {
                 }
             }
         }
+        }
+        if (selected.isNotEmpty()) {
+            HorizontalDivider()
+            val picked = entries.filter { it.file.path in selected }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("${picked.size} selected · ${fmt(picked.sumOf { it.size ?: 0 })}",
+                    modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { selected = emptySet() }) { Text("Clear") }
+                Button(onClick = { toDelete = picked.map { it.file } }) { Text("Delete selected") }
+            }
+        }
     }
+    LaunchedEffect(path) { selected = emptySet() }
 
     preview?.let { f ->
-        PreviewDialog(f, { preview = null }, onDelete = { preview = null; toDelete = f })
+        PreviewDialog(f, { preview = null }, onDelete = { preview = null; toDelete = listOf(f) })
     }
-    toDelete?.let { f ->
+    if (toDelete.isNotEmpty()) {
+        val files = toDelete
         AlertDialog(
-            onDismissRequest = { toDelete = null },
-            title = { Text("Delete permanently?") },
-            text = { Text("${f.name}\n\nAndroid has no trash for files, so this cannot be undone.") },
+            onDismissRequest = { toDelete = emptyList() },
+            title = { Text(if (files.size == 1) "Delete \"${files[0].name}\" permanently?" else "Delete ${files.size} items permanently?") },
+            text = {
+                Text("Android has no trash for files, so this cannot be undone.\n\n" +
+                    files.take(10).joinToString("\n") { "• " + it.name } +
+                    if (files.size > 10) "\n…and ${files.size - 10} more" else "")
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    toDelete = null
+                    toDelete = emptyList()
                     scope.launch {
-                        val ok = withContext(Dispatchers.IO) {
-                            Scanners.allowed(f, ctx) && f.deleteRecursively()
+                        val failed = withContext(Dispatchers.IO) {
+                            files.filterNot { Scanners.allowed(it, ctx) && it.deleteRecursively() }
                         }
-                        if (!ok) error = "Could not delete ${f.name}"
+                        if (failed.isNotEmpty()) error = "Could not delete " + failed.joinToString { it.name }
+                        selected = selected - files.map { it.path }.toSet()
                         reload++
                         onChanged()
                     }
                 }) { Text("Delete") }
             },
-            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { toDelete = emptyList() }) { Text("Cancel") } },
         )
     }
     error?.let { msg ->
@@ -376,9 +404,11 @@ fun StorageScreen(onChanged: () -> Unit) {
     }
 }
 
-/** Treemap of the current folder: each item is a block sized by its space, colored by type. */
+/** Treemap of the current folder: each item is a block sized by its space, colored by type.
+ *  Tap opens a folder or previews a file; long-press selects it for "Delete selected". */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StorageMap(entries: List<Entry>, onOpen: (Entry) -> Unit) {
+private fun StorageMap(entries: List<Entry>, selected: Set<String>, onToggle: (Entry) -> Unit, onOpen: (Entry) -> Unit) {
     val shown = remember(entries) {
         entries.filter { (it.size ?: 0) > 0 }.sortedByDescending { it.size }.take(150)
     }
@@ -404,9 +434,13 @@ private fun StorageMap(entries: List<Entry>, onOpen: (Entry) -> Unit) {
                         .size(w, h)
                         .clip(RoundedCornerShape(3.dp))
                         .background(Kind.of(e.file).color)
-                        .clickable { onOpen(e) }
+                        .then(if (e.file.path in selected) Modifier.border(3.dp, Color.White, RoundedCornerShape(3.dp)) else Modifier)
+                        .combinedClickable(onClick = { onOpen(e) }, onLongClick = { onToggle(e) })
                         .padding(4.dp)
                 ) {
+                    if (e.file.path in selected && w > 24.dp && h > 24.dp) {
+                        Box(Modifier.align(Alignment.TopEnd)) { Ico(R.drawable.ic_check, "Selected", Color.White, size = 16) }
+                    }
                     if (w > 56.dp && h > 34.dp) {
                         Column {
                             Text(e.file.name, color = Color.White, maxLines = 1,
@@ -418,7 +452,9 @@ private fun StorageMap(entries: List<Entry>, onOpen: (Entry) -> Unit) {
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Long-press a block to select it", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Kind.values().forEach { k ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(k.color))

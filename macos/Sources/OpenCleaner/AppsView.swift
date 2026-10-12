@@ -174,6 +174,7 @@ final class AppsModel: ObservableObject {
         let todo = plan.filter(\.selected)
         uninstalling = nil
         var failed: [String] = []
+        var needAdmin: [PlanItem] = []
         let apps = ["/Applications/", home + "/Applications/"]
         for item in todo {
             let p = item.id.standardizedFileURL.path
@@ -181,12 +182,39 @@ final class AppsModel: ObservableObject {
             let okLeft = item.id != app.id && p.hasPrefix(home + "/Library/")
             guard okApp || okLeft else { failed.append("\(item.title): outside the allowed folders"); continue }
             do { try FileManager.default.removeItem(at: item.id) }   // removes a symlink itself, not its target
+            catch where Self.needsAdmin(error) { needAdmin.append(item) }
             catch { failed.append("\(item.title): \(error.localizedDescription)") }
+        }
+        // Apps installed by a .pkg (Microsoft Office, for example) belong to root: ask macOS for the
+        // administrator password, then remove exactly these already-checked paths.
+        if !needAdmin.isEmpty, let err = Self.adminRemove(needAdmin.map { $0.id.standardizedFileURL.path }) {
+            failed += needAdmin.map { "\($0.title): \(err)" }
         }
         message = failed.isEmpty
             ? "\(app.name) was deleted permanently (\(fmt(todo.reduce(0) { $0 + $1.size })) freed)."
             : "Some items could not be deleted:\n" + failed.joined(separator: "\n")
         load()
+    }
+
+    /// True for "permission denied" style errors, which an administrator can get past.
+    nonisolated static func needsAdmin(_ error: Error) -> Bool {
+        let e = error as NSError
+        if e.domain == NSCocoaErrorDomain && [513, 640].contains(e.code) { return true }   // no permission / read-only
+        if let u = e.userInfo[NSUnderlyingErrorKey] as? NSError, u.domain == NSPOSIXErrorDomain,
+           [Int(EACCES), Int(EPERM)].contains(u.code) { return true }
+        return e.domain == NSPOSIXErrorDomain && [Int(EACCES), Int(EPERM)].contains(e.code)
+    }
+
+    /// `rm -rf` the given paths through the macOS administrator prompt. Returns an error message, or nil.
+    nonisolated static func adminRemove(_ paths: [String]) -> String? {
+        let quoted = paths.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+        let shell = "/bin/rm -rf " + quoted
+        let escaped = shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let source = "do shell script \"" + escaped + "\" with administrator privileges"
+        var err: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&err)
+        guard let err else { return nil }
+        return (err[NSAppleScript.errorMessage] as? String) ?? "cancelled at the administrator prompt"
     }
 }
 
@@ -270,7 +298,7 @@ struct UninstallSheet: View {
             Text("Uninstall \(model.uninstalling?.name ?? "")?").font(.headline)
             Label("Ticked items are deleted permanently. They do not go to the Trash, so this cannot be undone.", systemImage: "exclamationmark.triangle.fill")
                 .font(.callout).foregroundStyle(.red)
-            Text("Items that may hold your data (Application Support, containers) start unticked.")
+            Text("Items that may hold your data (Application Support, containers) start unticked. Apps installed for all users (like Microsoft Office) ask for your administrator password.")
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 VStack(spacing: 0) {

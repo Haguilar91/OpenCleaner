@@ -4,7 +4,7 @@
 #   ARCHS=amd64 ./build_release_docker.sh 1.2   only one architecture (build each natively where possible)
 set -e
 cd "$(dirname "$0")"
-VERSION="${1:-1.2}"
+VERSION="${1:-1.3}"
 OUT="$(cd .. && pwd)/dist/release-$VERSION"
 mkdir -p "$OUT"
 for arch in ${ARCHS:-amd64 arm64}; do

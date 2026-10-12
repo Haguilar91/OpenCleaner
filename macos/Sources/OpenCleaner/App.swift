@@ -11,6 +11,7 @@ struct OpenCleanerApp: App {
                 .tint(Color(red: 0.145, green: 0.388, blue: 0.922))   // Trust Blue #2563EB
                 .frame(minWidth: 760, minHeight: 640)
                 .task { await store.scan() }
+                .task { await store.checkForUpdates(manual: false) }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 840, height: 760)
@@ -54,7 +55,23 @@ struct RootView: View {
             .labelsHidden()
             .frame(width: 300)
             Spacer()
+            if let u = store.update {
+                Button(store.updating ? "Updating\u{2026}" : "Update to \(u.version)") { store.offerUpdate = true }
+                    .buttonStyle(.borderedProminent).controlSize(.small).disabled(store.updating)
+            } else {
+                Button { Task { await store.checkForUpdates(manual: true) } } label: {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .buttonStyle(.borderless).help("Check for updates (OpenCleaner \(Updater.currentVersion))")
+            }
             Text(store.freeText).font(.callout).foregroundStyle(.secondary)
+        }
+        .alert("Update to OpenCleaner \(store.update?.version ?? "")?", isPresented: $store.offerUpdate) {
+            Button("Update and restart") { Task { await store.installUpdate() } }
+            Button("Release page") { if let u = store.update?.page { NSWorkspace.shared.open(u) } }
+            Button("Later", role: .cancel) {}
+        } message: {
+            Text("You have \(Updater.currentVersion). The update is downloaded from GitHub, checked against the release checksums, and installed in place of this app.\n\n" + String((store.update?.notes ?? "").prefix(600)))
         }
         .padding(.leading, 82)        // room for the window's close/minimise/zoom buttons
         .padding(.trailing, 18)

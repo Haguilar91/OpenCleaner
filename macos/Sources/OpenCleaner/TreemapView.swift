@@ -136,9 +136,18 @@ struct MapView: View {
     private func block(_ e: Entry, _ r: CGRect) -> some View {
         let inner = r.insetBy(dx: 1, dy: 1)
         let w = max(inner.width, 0), h = max(inner.height, 0)
+        let picked = model.selected.contains(e.id)
         return Button { open(e) } label: {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 3).fill(Kind.of(e).color.opacity(e.isDir ? 0.95 : 0.85))
+                if picked {                                   // selected: thick outline and a check mark
+                    RoundedRectangle(cornerRadius: 3).strokeBorder(Color.white, lineWidth: 3)
+                    RoundedRectangle(cornerRadius: 3).strokeBorder(Color.black.opacity(0.6), lineWidth: 1)
+                    if w > 24 && h > 24 {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(4)
+                    }
+                }
                 if w > 64 && h > 34 {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(e.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
@@ -151,7 +160,13 @@ struct MapView: View {
             .frame(width: w, height: h)
         }
         .buttonStyle(.plain)
-        .help("\(e.name) \u{2014} \(fmt(e.size ?? 0))")
+        .help("\(e.name) \u{2014} \(fmt(e.size ?? 0)). Right-click to select or delete.")
+        .contextMenu {
+            Button(e.isDir ? "Open" : "Preview") { open(e) }
+            Button(picked ? "Deselect" : "Select") { model.toggleSelected(e.id) }
+            Divider()
+            Button(model.deleteMode.rawValue + "\u{2026}", role: .destructive) { model.pendingDelete = [e.id] }
+        }
         .offset(x: inner.minX, y: inner.minY)
     }
 

@@ -20,8 +20,8 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("OpenCleaner")]
 [assembly: AssemblyProduct("OpenCleaner")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace OpenCleaner
 {
@@ -740,11 +740,14 @@ namespace OpenCleaner
         }
     }
 
-    // Draws the treemap: Items must be positive-size entries, largest first. Click a block to raise BlockClicked.
+    // Draws the treemap: Items must be positive-size entries, largest first. Click a block to raise BlockClicked,
+    // right-click to raise BlockRightClicked (select it). Paths in Selected get a white outline.
     class MapPanel : Panel
     {
         public List<DiskEntry> Items = new List<DiskEntry>();
+        public HashSet<string> Selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public event Action<DiskEntry> BlockClicked;
+        public event Action<DiskEntry> BlockRightClicked;
         List<RectangleF> rects = new List<RectangleF>();
 
         public MapPanel()
@@ -775,6 +778,12 @@ namespace OpenCleaner
                     rects[i] = r;
                     using (SolidBrush b = new SolidBrush(Treemap.KindColors[Treemap.KindOf(Items[i].Path, Items[i].IsDir)]))
                         g.FillRectangle(b, r.X + 1, r.Y + 1, Math.Max(r.Width - 2, 0), Math.Max(r.Height - 2, 0));
+                    if (Selected.Contains(Items[i].Path))
+                    {
+                        using (Pen pen = new Pen(Color.White, 3))
+                            g.DrawRectangle(pen, r.X + 2.5f, r.Y + 2.5f, Math.Max(r.Width - 5, 0), Math.Max(r.Height - 5, 0));
+                        if (r.Width > 24 && r.Height > 24) g.DrawString("\u2713", f, Brushes.White, r.Right - 16, r.Y + 4);
+                    }
                     if (r.Width > 64 && r.Height > 34)
                     {
                         string name = System.IO.Path.GetFileName(Items[i].Path);
@@ -800,7 +809,8 @@ namespace OpenCleaner
             {
                 if (rects[i].Contains(e.Location))
                 {
-                    if (BlockClicked != null) BlockClicked(Items[i]);
+                    if (e.Button == MouseButtons.Right) { if (BlockRightClicked != null) BlockRightClicked(Items[i]); }
+                    else if (BlockClicked != null) BlockClicked(Items[i]);
                     return;
                 }
             }
@@ -1020,6 +1030,7 @@ namespace OpenCleaner
     {
         public string KeyPath, Name, Publisher, Version, InstallLocation, UninstallString;
         public long Size = -1;                          // bytes, -1 = not known yet
+        public bool Machine;                            // installed for all users (HKLM): its uninstaller needs admin
         public DateTime LastUsed = DateTime.MinValue;   // MinValue = unknown
     }
 
@@ -1073,6 +1084,7 @@ namespace OpenCleaner
 
                             AppEntry e = new AppEntry();
                             e.KeyPath = (hive == Registry.CurrentUser ? "HKCU\\" : "HKLM\\") + path + "\\" + sub;
+                            e.Machine = hive == Registry.LocalMachine;
                             e.Name = name.Trim();
                             e.Publisher = (a.GetValue("Publisher") as string) ?? "";
                             e.Version = ver;
@@ -1259,15 +1271,17 @@ namespace OpenCleaner
             return us;
         }
 
-        // Runs the program's own uninstaller (it shows its own window and may ask for administrator)
-        // and waits. Returns an error message, or null when it finished.
+        // Runs the program's own uninstaller (it shows its own window) and waits. Programs installed for
+        // all users, such as Microsoft Office, need administrator rights, so Windows shows the UAC prompt.
+        // Returns an error message, or null when it finished.
         public static string RunUninstaller(AppEntry a)
         {
             try
             {
                 ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + Command(a) + "\"");
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
+                psi.UseShellExecute = true;                 // required for the "runas" (UAC) verb
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                if (a.Machine) psi.Verb = "runas";
                 using (Process p = Process.Start(psi))
                 {
                     p.WaitForExit();
@@ -1276,11 +1290,75 @@ namespace OpenCleaner
                 }
                 return null;
             }
+            catch (Win32Exception ex)
+            {
+                if (ex.NativeErrorCode == 1223) return "You cancelled the administrator prompt, so nothing was uninstalled.";
+                return ex.Message;
+            }
             catch (Exception ex) { return ex.Message; }
         }
 
-        // Permanently deletes a leftover folder (not the Recycle Bin), only inside AppData, ProgramData or the install folder.
+        // True while the program's uninstall entry is still in the registry. Some uninstallers (Office's
+        // Click-to-Run) hand off to another process and return at once; leftovers must wait until it is gone.
+        public static bool StillInstalled(AppEntry a)
+        {
+            try
+            {
+                RegistryKey hive = a.KeyPath.StartsWith("HKCU\\") ? Registry.CurrentUser : Registry.LocalMachine;
+                using (RegistryKey k = hive.OpenSubKey(a.KeyPath.Substring(5)))
+                    return k != null;
+            }
+            catch (Exception) { return false; }
+        }
+
+        // Deletes leftover folders that Windows protects (ProgramData, Program Files) in one elevated step,
+        // after the same allowed-folder check as RemoveLeftover. Returns an error message, or null.
+        public static string RemoveLeftoversAsAdmin(AppEntry a, List<string> paths)
+        {
+            List<string> quoted = new List<string>();
+            foreach (string p in paths)
+            {
+                string why = RemoveLeftoverCheck(a, p);
+                if (why != null) return why;
+                quoted.Add("'" + p.Replace("'", "''") + "'");
+            }
+            if (quoted.Count == 0) return null;
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("powershell.exe",
+                    "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"Remove-Item -LiteralPath " +
+                    string.Join(",", quoted.ToArray()) + " -Recurse -Force\"");
+                psi.UseShellExecute = true;
+                psi.Verb = "runas";
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                using (Process p = Process.Start(psi)) p.WaitForExit();
+                foreach (string p in paths)
+                    if (Directory.Exists(p)) return "Could not delete " + p;
+                return null;
+            }
+            catch (Win32Exception ex)
+            {
+                if (ex.NativeErrorCode == 1223) return "You cancelled the administrator prompt; those folders were left.";
+                return ex.Message;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        // Permanently deletes a leftover folder (not the Recycle Bin), only inside AppData, ProgramData or the
+        // install folder. Returns null when done, NeedsAdmin when Windows refused access, or an error message.
+        public const string NeedsAdmin = "needs administrator";
+
         public static string RemoveLeftover(AppEntry a, string path)
+        {
+            string why = RemoveLeftoverCheck(a, path);
+            if (why != null) return why;
+            try { Directory.Delete(System.IO.Path.GetFullPath(path), true); return null; }
+            catch (UnauthorizedAccessException) { return NeedsAdmin; }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        // Null when the path is inside AppData, ProgramData or the program's install folder, else why not.
+        static string RemoveLeftoverCheck(AppEntry a, string path)
         {
             string full;
             try { full = System.IO.Path.GetFullPath(path).TrimEnd('\\'); }
@@ -1299,8 +1377,120 @@ namespace OpenCleaner
                         && rr.Equals(a.InstallLocation.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))) ok = true;
             }
             if (!ok) return "Refused: outside the allowed folders";
-            try { Directory.Delete(full, true); return null; }
-            catch (Exception ex) { return ex.Message; }
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------ updates (GitHub releases)
+    class ReleaseInfo
+    {
+        public string Version, Notes, Page;
+        public Dictionary<string, string> Assets = new Dictionary<string, string>();   // file name -> download URL
+    }
+
+    // Checks the GitHub releases of Haguilar91/OpenCleaner and downloads a file from the latest one, verified
+    // against the release's SHA256SUMS.txt. Written in C# 5 so the WinForms and WinUI apps can share it.
+    static class Updater
+    {
+        const string Api = "https://api.github.com/repos/Haguilar91/OpenCleaner/releases/latest";
+
+        public static string CurrentVersion
+        {
+            get
+            {
+                Version v = Assembly.GetExecutingAssembly().GetName().Version;
+                return v.Major + "." + v.Minor + (v.Build > 0 ? "." + v.Build : "");
+            }
+        }
+
+        static WebClient Client()
+        {
+            ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072;   // TLS 1.2 on older .NET Framework
+            WebClient wc = new WebClient();
+            wc.Headers[HttpRequestHeader.UserAgent] = "OpenCleaner-Windows";
+            wc.Headers[HttpRequestHeader.Accept] = "application/vnd.github+json";
+            return wc;
+        }
+
+        static List<int> Parts(string v)
+        {
+            List<int> parts = new List<int>();
+            foreach (string p in v.Trim().TrimStart('v', 'V').Split('.'))
+            {
+                Match m = Regex.Match(p, @"^\d+");
+                parts.Add(m.Success ? int.Parse(m.Value) : 0);
+            }
+            return parts;
+        }
+
+        public static bool IsNewer(string a, string b)
+        {
+            List<int> x = Parts(a), y = Parts(b);
+            for (int i = 0; i < Math.Max(x.Count, y.Count); i++)
+            {
+                int p = i < x.Count ? x[i] : 0, q = i < y.Count ? y[i] : 0;
+                if (p != q) return p > q;
+            }
+            return false;
+        }
+
+        static string Unescape(string s)
+        {
+            return Regex.Replace(s, @"\\(u[0-9a-fA-F]{4}|.)", m =>
+            {
+                string e = m.Groups[1].Value;
+                if (e.Length == 5) return ((char)Convert.ToInt32(e.Substring(1), 16)).ToString();
+                switch (e) { case "n": return "\n"; case "r": return ""; case "t": return "\t"; default: return e; }
+            });
+        }
+
+        // The latest release, or throws.
+        public static ReleaseInfo Latest()
+        {
+            string json;
+            using (WebClient wc = Client()) json = wc.DownloadString(Api);
+            Match tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
+            if (!tag.Success) throw new InvalidOperationException("No release found on GitHub.");
+            ReleaseInfo r = new ReleaseInfo();
+            r.Version = tag.Groups[1].Value.TrimStart('v', 'V');
+            r.Page = "https://github.com/Haguilar91/OpenCleaner/releases/tag/" + tag.Groups[1].Value;
+            Match body = Regex.Match(json, "\"body\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+            r.Notes = body.Success ? Unescape(body.Groups[1].Value) : "";
+            foreach (Match m in Regex.Matches(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+)\""))
+            {
+                string url = m.Groups[1].Value;
+                r.Assets[Uri.UnescapeDataString(url.Substring(url.LastIndexOf('/') + 1))] = url;
+            }
+            return r;
+        }
+
+        // Downloads the asset whose name ends with `suffix` into %TEMP% and checks its SHA-256 against
+        // SHA256SUMS.txt. Returns the file path, or throws with a message for the user.
+        public static string Download(ReleaseInfo r, string suffix)
+        {
+            string name = null;
+            foreach (string n in r.Assets.Keys) if (n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) name = n;
+            if (name == null) throw new InvalidOperationException("This release has no " + suffix.Trim('-') + " download.");
+            if (!r.Assets.ContainsKey("SHA256SUMS.txt"))
+                throw new InvalidOperationException("This release has no checksums, so it was not installed.");
+            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OpenCleaner-update");
+            Directory.CreateDirectory(dir);
+            string file = System.IO.Path.Combine(dir, name);
+            string sums;
+            using (WebClient wc = Client())
+            {
+                sums = wc.DownloadString(r.Assets["SHA256SUMS.txt"]);
+                wc.Headers.Remove(HttpRequestHeader.Accept);
+                wc.DownloadFile(r.Assets[name], file);
+            }
+            string hex;
+            using (System.Security.Cryptography.SHA256 sha = System.Security.Cryptography.SHA256.Create())
+            using (FileStream fs = File.OpenRead(file))
+                hex = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+            foreach (string line in sums.Split('\n'))
+                if (line.Trim().StartsWith(hex) && line.Trim().EndsWith(name)) return file;
+            File.Delete(file);
+            throw new InvalidOperationException("The download did not match the release checksum, so it was not installed.");
         }
     }
 
@@ -1326,7 +1516,8 @@ namespace OpenCleaner
             note.Padding = new Padding(10, 8, 10, 0);
             note.ForeColor = Color.Firebrick;
             note.Text = "WARNING: this deletes permanently. Nothing goes to the Recycle Bin and it cannot be undone.\r\n"
-                      + "Windows runs the program's own uninstaller (it may ask for administrator), then the ticked folders are deleted. "
+                      + "Windows runs the program's own uninstaller, then the ticked folders are deleted. Programs installed for all "
+                      + "users (like Microsoft Office) ask for administrator permission. "
                       + "Roaming and ProgramData folders may hold settings, so they start unticked.";
 
             box.Dock = DockStyle.Fill;
@@ -1392,6 +1583,10 @@ namespace OpenCleaner
         ProgressBar diskProgress = new ProgressBar();
         MapPanel mapPanel = new MapPanel();
         int measured, itemCount;
+        HashSet<string> diskSel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // checked rows / right-clicked blocks
+        ComboBox deleteBox = new ComboBox();
+        bool syncingChecks;
+        static readonly string[] DeleteModes = { "Move to Recycle Bin", "Delete permanently" };
 
         // Apps tab
         ListView appList = new ListView();
@@ -1400,6 +1595,10 @@ namespace OpenCleaner
         Button appUninstallBtn = new Button(), appRescanBtn = new Button();
         List<AppEntry> appEntries = new List<AppEntry>();
         int appGen, appMeasured, appToMeasure;
+
+        // updates
+        LinkLabel updateLink = new LinkLabel();
+        ReleaseInfo pendingUpdate;
         static readonly int[] TopCounts = { 0, 5, 10, 50, 100 };     // 0 = all
 
         public MainForm()
@@ -1425,8 +1624,15 @@ namespace OpenCleaner
             freeLabel.Dock = DockStyle.Right; freeLabel.Width = 340;
             freeLabel.TextAlign = ContentAlignment.MiddleRight;
             freeLabel.ForeColor = Color.White; freeLabel.Font = new Font("Segoe UI", 10f);
+            updateLink.Dock = DockStyle.Right; updateLink.Width = 170;
+            updateLink.TextAlign = ContentAlignment.MiddleRight;
+            updateLink.LinkColor = Color.White; updateLink.ActiveLinkColor = Color.White;
+            updateLink.Font = new Font("Segoe UI", 9.5f);
+            updateLink.Text = "Check for updates";
+            updateLink.LinkClicked += delegate { if (pendingUpdate == null) CheckUpdates(true); else OfferUpdate(); };
             header.Controls.Add(logo);
             header.Controls.Add(title);
+            header.Controls.Add(updateLink);
             header.Controls.Add(freeLabel);
 
             tabs.Dock = DockStyle.Fill;
@@ -1446,7 +1652,7 @@ namespace OpenCleaner
             BuildDiskTab(diskTab);
             BuildAppsTab(appsTab);
             UpdateFree();
-            Shown += delegate { Scan(); LoadDisk(Environment.GetEnvironmentVariable("USERPROFILE")); LoadApps(); };
+            Shown += delegate { Scan(); LoadDisk(Environment.GetEnvironmentVariable("USERPROFILE")); LoadApps(); CheckUpdates(false); };
 
             // Layout above is in 96 DPI pixels; scale it to the screen (fonts already scale on their own).
             AutoScaleDimensions = new SizeF(96f, 96f);
@@ -1701,6 +1907,77 @@ namespace OpenCleaner
             catch (Win32Exception) { /* user cancelled the UAC prompt */ }
         }
 
+        // ---------------------------------------------------------- updates
+        async void CheckUpdates(bool manual)
+        {
+            ReleaseInfo r = null;
+            string error = null;
+            try { r = await Task.Run(() => Updater.Latest()); }
+            catch (Exception ex) { error = ex.Message; }
+            if (r != null && Updater.IsNewer(r.Version, Updater.CurrentVersion))
+            {
+                pendingUpdate = r;
+                updateLink.Text = "Update to " + r.Version;
+                if (manual) OfferUpdate();
+            }
+            else if (manual)
+            {
+                MessageBox.Show(this, error != null ? "Could not check for updates: " + error
+                    : "OpenCleaner " + Updater.CurrentVersion + " is up to date.", "OpenCleaner");
+            }
+        }
+
+        static bool CanWrite(string dir)
+        {
+            try
+            {
+                string probe = Path.Combine(dir, ".opencleaner-write-test");
+                File.WriteAllText(probe, "");
+                File.Delete(probe);
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
+
+        // This is the portable build: download the new exe, check it, and swap it in once this one has exited.
+        async void OfferUpdate()
+        {
+            ReleaseInfo r = pendingUpdate;
+            string notes = r.Notes.Length > 600 ? r.Notes.Substring(0, 600) + "..." : r.Notes;
+            if (MessageBox.Show(this, "You have " + Updater.CurrentVersion + ". The update is downloaded from GitHub, checked "
+                    + "against the release checksums, and replaces this program; it then restarts.\n\n" + notes
+                    + "\n\nRelease page: " + r.Page, "Update to OpenCleaner " + r.Version + "?",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            string exe = Application.ExecutablePath;
+            if (!CanWrite(Path.GetDirectoryName(exe)))
+            {
+                MessageBox.Show(this, "OpenCleaner cannot replace itself in " + Path.GetDirectoryName(exe)
+                    + ". The release page opens so you can download it.", "Update");
+                try { Process.Start(r.Page); } catch (Exception) { }
+                return;
+            }
+            updateLink.Text = "Updating..."; updateLink.Enabled = false;
+            string file;
+            try { file = await Task.Run(() => Updater.Download(r, "-Windows-portable.exe")); }
+            catch (Exception ex)
+            {
+                updateLink.Text = "Update to " + r.Version; updateLink.Enabled = true;
+                MessageBox.Show(this, "Update failed: " + ex.Message + "\n\n" + r.Page, "Update");
+                return;
+            }
+            int pid = Process.GetCurrentProcess().Id;
+            string script = Path.Combine(Path.GetDirectoryName(file), "swap.cmd");
+            File.WriteAllText(script, "@echo off\r\n:wait\r\n"
+                + "tasklist /FI \"PID eq " + pid + "\" 2>nul | find \"" + pid + "\" >nul && (ping -n 2 127.0.0.1 >nul & goto wait)\r\n"
+                + "move /y \"" + file + "\" \"" + exe + "\" >nul\r\n"
+                + "start \"\" \"" + exe + "\"\r\n");
+            ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + script + "\"");
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            Process.Start(psi);
+            Application.Exit();
+        }
+
         // ---------------------------------------------------------- apps tab
         void BuildAppsTab(TabPage page)
         {
@@ -1864,14 +2141,37 @@ namespace OpenCleaner
                 MessageBox.Show(this, err, "Uninstall");
                 return;
             }
+            // Some uninstallers (Office) return at once and keep working in another process: wait until the
+            // program is really gone before touching any leftovers.
+            for (int i = 0; i < 200 && await Task.Run(() => Apps.StillInstalled(app)); i++)
+            {
+                appStatus.Text = "Waiting for the " + app.Name + " uninstaller to finish...";
+                await Task.Delay(3000);
+            }
+            if (await Task.Run(() => Apps.StillInstalled(app)))
+            {
+                SetBusy(false, "");
+                MessageBox.Show(this, app.Name + " is still installed (the uninstaller was cancelled or is still running). "
+                    + "Its leftover folders were left alone.", "Uninstall");
+                LoadApps();
+                return;
+            }
             if (app.InstallLocation.Length > 0 && Directory.Exists(app.InstallLocation)) picked.Add(app.InstallLocation);
             List<string> failed = new List<string>();
+            List<string> needAdmin = new List<string>();
             int moved = 0;
             foreach (string p in picked)
             {
                 string path = p;
                 string e = await Task.Run(() => Apps.RemoveLeftover(app, path));
-                if (e == null) moved++; else failed.Add(p + ": " + e);
+                if (e == null) moved++;
+                else if (e == Apps.NeedsAdmin) needAdmin.Add(p);
+                else failed.Add(p + ": " + e);
+            }
+            if (needAdmin.Count > 0)
+            {
+                string e = await Task.Run(() => Apps.RemoveLeftoversAsAdmin(app, needAdmin));
+                if (e == null) moved += needAdmin.Count; else failed.Add(e);
             }
             SetBusy(false, "");
             string msg = app.Name + " was uninstalled." + (moved > 0 ? " " + moved + " folder(s) deleted." : "");
@@ -1917,6 +2217,14 @@ namespace OpenCleaner
             diskList.View = View.Details;
             diskList.FullRowSelect = true;
             diskList.MultiSelect = false;
+            diskList.CheckBoxes = true;
+            diskList.ItemChecked += delegate(object o, ItemCheckedEventArgs ev)
+            {
+                if (syncingChecks) return;
+                if (ev.Item.Checked) diskSel.Add(ev.Item.Name); else diskSel.Remove(ev.Item.Name);
+                UpdateDiskButtons();
+                mapPanel.Invalidate();
+            };
             diskList.Font = new Font("Segoe UI", 10f);
             diskList.BorderStyle = BorderStyle.None;
             diskList.SmallImageList = RowHeight(S(28));
@@ -1956,22 +2264,39 @@ namespace OpenCleaner
                 mapPanel.Visible = mapBtn.Checked;
                 RefreshDisk();
             };
-            diskProgress.SetBounds(420, 11, 300, 16);
+            deleteBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            deleteBox.Items.AddRange(DeleteModes);
+            deleteBox.SelectedIndex = LoadDeleteMode();
+            deleteBox.SetBounds(416, 8, 160, 28);
+            deleteBox.SelectedIndexChanged += delegate { SaveDeleteMode(deleteBox.SelectedIndex); UpdateDiskButtons(); };
+            diskProgress.SetBounds(590, 11, 200, 16);
             diskProgress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             diskProgress.Visible = false;
             tools.Controls.Add(sortLabel); tools.Controls.Add(sortBox);
             tools.Controls.Add(topLabel); tools.Controls.Add(topBox);
-            tools.Controls.Add(mapBtn); tools.Controls.Add(diskProgress);
+            tools.Controls.Add(mapBtn); tools.Controls.Add(deleteBox); tools.Controls.Add(diskProgress);
 
             mapPanel.Dock = DockStyle.Fill;
             mapPanel.Visible = false;
             mapPanel.BlockClicked += delegate(DiskEntry d) { OpenDiskItem(d.Path); };
+            mapPanel.Selected = diskSel;
+            mapPanel.BlockRightClicked += delegate(DiskEntry d)
+            {
+                if (!diskSel.Remove(d.Path)) diskSel.Add(d.Path);
+                RefreshDisk();
+            };
 
             Panel bottom = new Panel();
             bottom.Dock = DockStyle.Bottom; bottom.Height = 44;
-            trashBtn.Text = "Move selected to Recycle Bin"; trashBtn.SetBounds(10, 7, 210, 30);
-            trashBtn.Click += OnTrash;
-            diskStatus.SetBounds(230, 7, 600, 30);
+            trashBtn.SetBounds(10, 7, 270, 30);
+            trashBtn.Click += delegate
+            {
+                List<string> paths = new List<string>();
+                foreach (DiskEntry d in Ordered()) if (diskSel.Contains(d.Path)) paths.Add(d.Path);
+                if (paths.Count == 0 && diskList.SelectedItems.Count > 0) paths.Add(diskList.SelectedItems[0].Name);
+                DeleteDiskPaths(paths);
+            };
+            diskStatus.SetBounds(290, 7, 600, 30);
             diskStatus.TextAlign = ContentAlignment.MiddleLeft;
             diskStatus.ForeColor = Color.DimGray;
             bottom.Controls.Add(trashBtn); bottom.Controls.Add(diskStatus);
@@ -1985,6 +2310,37 @@ namespace OpenCleaner
             mapPanel.BringToFront();
 
             root = Util.Env("USERPROFILE");
+            UpdateDiskButtons();
+        }
+
+        static int LoadDeleteMode()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\OpenCleaner"))
+                    return k != null && (k.GetValue("DeleteMode") as string) == "permanent" ? 1 : 0;
+            }
+            catch (Exception) { return 0; }
+        }
+
+        static void SaveDeleteMode(int index)
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.CreateSubKey(@"Software\OpenCleaner"))
+                    k.SetValue("DeleteMode", index == 1 ? "permanent" : "trash");
+            }
+            catch (Exception) { }
+        }
+
+        void UpdateDiskButtons()
+        {
+            bool permanent = deleteBox.SelectedIndex == 1;
+            long size = 0;
+            foreach (DiskEntry d in disk) if (diskSel.Contains(d.Path) && d.Size > 0) size += d.Size;
+            trashBtn.Text = diskSel.Count == 0
+                ? (permanent ? "Delete highlighted permanently" : "Move highlighted to Recycle Bin")
+                : (permanent ? "Delete " : "Recycle ") + diskSel.Count + " checked (" + Util.Fmt(size) + ")";
         }
 
         void LoadDisk(string path)
@@ -1997,6 +2353,7 @@ namespace OpenCleaner
             List<string> entries = Util.Children(path);
             disk.Clear();
             diskByPath.Clear();
+            diskSel.Clear();
             foreach (string e in entries)
             {
                 DiskEntry d = new DiskEntry();
@@ -2073,6 +2430,7 @@ namespace OpenCleaner
         {
             List<DiskEntry> ordered = Ordered();
             string keep = diskList.SelectedItems.Count > 0 ? diskList.SelectedItems[0].Name : null;
+            syncingChecks = true;
             diskList.BeginUpdate();
             diskList.Items.Clear();
             foreach (DiskEntry d in ordered)
@@ -2085,8 +2443,11 @@ namespace OpenCleaner
                 lvi.SubItems.Add(d.Size < 0 ? "..." : Util.Fmt(d.Size));
                 diskList.Items.Add(lvi);
                 if (d.Path == keep) lvi.Selected = true;
+                lvi.Checked = diskSel.Contains(d.Path);
             }
             diskList.EndUpdate();
+            syncingChecks = false;
+            UpdateDiskButtons();
 
             // the map draws the same selection, largest first, at most 150 blocks
             List<DiskEntry> shown = new List<DiskEntry>();
@@ -2097,31 +2458,60 @@ namespace OpenCleaner
             mapPanel.Invalidate();
         }
 
-        // Folder: open it. File: preview it, with a Recycle Bin option.
+        // Folder: open it. File: preview it, with a Delete option.
         void OpenDiskItem(string p)
         {
             if (Util.IsDir(p)) { LoadDisk(p); return; }
-            if (File.Exists(p) && PreviewForm.Ask(this, p, true)
-                && MessageBox.Show(this, p, "Move to Recycle Bin?", MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question) == DialogResult.Yes) TrashPath(p);
+            if (File.Exists(p) && PreviewForm.Ask(this, p, true)) DeleteDiskPaths(new List<string> { p });
         }
 
-        void OnTrash(object sender, EventArgs e)
+        // Why a path may not be deleted permanently (drive roots and system folders), or null.
+        static string PermanentBlock(string path)
         {
-            if (diskList.SelectedItems.Count == 0) return;
-            string p = diskList.SelectedItems[0].Name;
-            if (MessageBox.Show(this, p, "Move to Recycle Bin?", MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question) != DialogResult.Yes) return;
-            TrashPath(p);
-        }
-
-        void TrashPath(string p)
-        {
-            try
+            string full = Path.GetFullPath(path).TrimEnd('\\');
+            string root = (Path.GetPathRoot(path) ?? "").TrimEnd('\\');
+            if (string.Equals(root, full, StringComparison.OrdinalIgnoreCase)) return "a whole drive";
+            Environment.SpecialFolder[] system = { Environment.SpecialFolder.Windows, Environment.SpecialFolder.ProgramFiles,
+                                                   Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.CommonApplicationData };
+            foreach (Environment.SpecialFolder f in system)
             {
-                Util.SendToRecycleBin(p);
+                string r = Environment.GetFolderPath(f).TrimEnd('\\');
+                if (r.Length > 3 && (full.Equals(r, StringComparison.OrdinalIgnoreCase)
+                    || full.StartsWith(r + "\\", StringComparison.OrdinalIgnoreCase)))
+                    return "a system folder (use Move to Recycle Bin, or uninstall the program)";
             }
-            catch (Exception ex) { MessageBox.Show(this, ex.Message, "Could not move to Recycle Bin"); }
+            return null;
+        }
+
+        // Asks first, then moves to the Recycle Bin or deletes permanently, as the Delete setting says.
+        void DeleteDiskPaths(List<string> paths)
+        {
+            if (paths.Count == 0) return;
+            bool permanent = deleteBox.SelectedIndex == 1;
+            StringBuilder sb = new StringBuilder(permanent
+                ? "This cannot be undone: nothing goes to the Recycle Bin.\n\n"
+                : "You can restore them from the Recycle Bin.\n\n");
+            for (int i = 0; i < paths.Count && i < 12; i++) sb.AppendLine(paths[i]);
+            if (paths.Count > 12) sb.AppendLine("...and " + (paths.Count - 12) + " more");
+            string what = paths.Count == 1 ? "\"" + Path.GetFileName(paths[0]) + "\"" : paths.Count + " items";
+            if (MessageBox.Show(this, sb.ToString(),
+                    permanent ? "Delete " + what + " permanently?" : "Move " + what + " to the Recycle Bin?",
+                    MessageBoxButtons.YesNo, permanent ? MessageBoxIcon.Warning : MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            List<string> failed = new List<string>();
+            foreach (string p in paths)
+            {
+                try
+                {
+                    if (!permanent) { Util.SendToRecycleBin(p); continue; }
+                    string block = PermanentBlock(p);
+                    if (block != null) throw new InvalidOperationException("refused: " + block);
+                    if (Directory.Exists(p)) Directory.Delete(p, true); else File.Delete(p);
+                }
+                catch (Exception ex) { failed.Add(Path.GetFileName(p) + ": " + ex.Message); }
+            }
+            if (failed.Count > 0)
+                MessageBox.Show(this, string.Join("\n", failed.ToArray()), "Some items could not be deleted");
             UpdateFree();
             LoadDisk(current);
         }

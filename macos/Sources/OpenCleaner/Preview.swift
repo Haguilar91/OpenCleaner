@@ -90,6 +90,7 @@ final class ReviewModel: ObservableObject {
 /// decide whether to delete it. `onTrash` adds a Move to Trash button.
 struct PreviewSheet: View {
     let url: URL
+    var deleteTitle = "Move to Trash"
     var onTrash: ((URL) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = PreviewModel()
@@ -131,7 +132,7 @@ struct PreviewSheet: View {
             HStack {
                 if let onTrash {
                     Button(role: .destructive) { dismiss(); onTrash(url) } label: {
-                        Label("Move to Trash", systemImage: "trash")
+                        Label(deleteTitle, systemImage: "trash")
                     }
                 }
                 Spacer()

@@ -48,8 +48,20 @@ Windows already have them).
 - Each cleaning item can only delete inside its own allowed folders; anything else is refused
   (Linux/macOS: inside `$HOME`; Windows: per-item roots; Android: shared storage and own cache,
   never `Android/data` or `Android/obb`). Files in use are skipped and counted, never forced.
-- The disk-usage views only move to Trash/Recycle Bin (desktop). Android has no trash for files, so
-  it warns that deletes are permanent.
+- Disk usage deletes follow a setting: **Move to Trash (default)** or Delete permanently (remembered:
+  macOS UserDefaults, Linux `~/.config/opencleaner/settings.json`, WinUI `%AppData%\OpenCleaner\settings.txt`,
+  WinForms `HKCU\Software\OpenCleaner`). Permanent: Linux/macOS only inside `$HOME`; Windows refuses drive
+  roots and Windows/Program Files/ProgramData. Android has no trash: always permanent, with a warning.
+  Multi-select = list checkboxes + right-click (desktop) / long-press (Android) on map blocks, one shared selection.
+- Uninstall is always permanent. Windows: HKLM (all-users) programs run their uninstaller with UAC
+  ("runas"); leftovers wait until the uninstall registry key is gone (Office's uninstaller returns early);
+  protected leftovers are removed in one elevated PowerShell step. macOS: root-owned apps (Office) go
+  through the AppleScript administrator prompt.
+- In-app updates from GitHub releases (`api.github.com/repos/Haguilar91/OpenCleaner/releases/latest`):
+  asset picked by name suffix (`-Setup-<arch>.exe`, `-Windows-portable.exe`, `-macOS.zip`,
+  `-linux-<arch>`, `-android.apk` for the phone app, `-androidtv.apk` for the TV app) and verified against `SHA256SUMS.txt`, so **every release must ship
+  `SHA256SUMS.txt` and keep these file names**. Version comes from the app (Info.plist, AssemblyVersion,
+  `VERSION` in opencleaner.py, versionName).
 - Show free space and, after cleaning, how much was freed.
 - Steam game names come from `store.steampowered.com/api/appdetails`, cached on disk
   (`opencleaner/steam_names`); unknown ids show as "App <id>". Installed apps are detected from

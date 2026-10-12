@@ -31,6 +31,10 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | Progress percentage while sizes are measured | yes | yes | yes* | yes* |
 | **Apps**: installed apps with size and last used, sort and Top N | yes | yes | yes* | yes* |
 | **Uninstall** with a review of leftover files (permanent delete, with a warning) | system prompt only | yes | yes* | yes* |
+| Uninstall apps installed for all users (asks for the administrator password / UAC) | n/a | yes | yes* (pkexec) | yes* |
+| **Select several files or folders** (list checkboxes, or right-click / long-press in the map) and delete them at once | yes | yes | yes* | yes* |
+| **Delete setting**: Move to Trash (default) or Delete permanently | permanent only | yes | yes* | yes* |
+| **Update from GitHub releases** inside the app (download checked against SHA256SUMS.txt) | yes | yes | yes* | yes* |
 
 \* written but not yet built or run on that platform; see Status.
 
@@ -104,12 +108,24 @@ Windows, WinForms (`windows/`):
 - **Windows:** temp folders, Windows Update cache, crash dumps, Recycle Bin, browser caches,
   developer caches, Steam.
 
+## Updates
+
+Each app checks the latest release on GitHub when it starts (one request to `api.github.com`; nothing
+about you or your files is sent), and has a "Check for updates" button. An update is downloaded from the
+release, checked against the release's `SHA256SUMS.txt`, and installed: the Windows installer upgrades
+in place, the portable Windows build and the Linux single-file build replace themselves, the Mac app
+replaces itself and relaunches, and Android opens its own installer. Linux running from source shows
+the release page instead.
+
 ## Safety
 
 - Nothing is deleted until you tick items and confirm.
 - Each item can only delete inside its own allowed folders; anything else is refused.
 - Files in use are skipped, never forced.
-- The disk-usage tabs only move items to the Trash / Recycle Bin.
+- Deleting in Disk usage moves items to the Trash / Recycle Bin by default; a setting switches it to
+  permanent delete (Android has no trash, so there it is always permanent and says so). Permanent
+  deletes are limited to your home folder (Linux/macOS) or refuse drive roots and system folders
+  (Windows). Uninstalling always deletes permanently, after a review and a warning.
 - Items that might hold something you want (save-game prefixes, device backups, orphaned
   packages, caches of running apps) start unticked.
 

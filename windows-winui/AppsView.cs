@@ -212,7 +212,8 @@ public sealed class AppsView : UserControl
         });
         body.Children.Add(new TextBlock
         {
-            Text = "Windows will run the program's own uninstaller (it may ask for administrator), then the ticked folders are deleted. "
+            Text = "Windows will run the program's own uninstaller, then the ticked folders are deleted. Programs installed for all users "
+                 + "(like Microsoft Office) ask for administrator permission. "
                  + "Roaming and ProgramData folders may hold settings, so they start unticked.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Ui.Res("TextFillColorSecondaryBrush"),
@@ -244,14 +245,35 @@ public sealed class AppsView : UserControl
             await Ui.Message(XamlRoot, "Uninstall", err);
             return;
         }
+        // Some uninstallers (Office) return at once and keep working in another process: wait until the
+        // program is really gone before touching any leftovers.
+        for (int i = 0; i < 200 && await Task.Run(() => Apps.StillInstalled(a)); i++)
+        {
+            status.Text = $"Waiting for the {a.Name} uninstaller to finish...";
+            await Task.Delay(3000);
+        }
+        if (await Task.Run(() => Apps.StillInstalled(a)))
+        {
+            await Ui.Message(XamlRoot, "Uninstall", $"{a.Name} is still installed (the uninstaller was cancelled or is still running). Its leftover folders were left alone.");
+            await LoadAsync();
+            return;
+        }
         // the install folder, if the uninstaller left it behind
         if (a.InstallLocation.Length > 0 && Directory.Exists(a.InstallLocation)) picked.Add(a.InstallLocation);
         var failed = new List<string>();
+        var needAdmin = new List<string>();
         int moved = 0;
         foreach (string p in picked)
         {
             string e = await Task.Run(() => Apps.RemoveLeftover(a, p));
-            if (e == null) moved++; else failed.Add(p + ": " + e);
+            if (e == null) moved++;
+            else if (e == Apps.NeedsAdmin) needAdmin.Add(p);
+            else failed.Add(p + ": " + e);
+        }
+        if (needAdmin.Count > 0)
+        {
+            string e = await Task.Run(() => Apps.RemoveLeftoversAsAdmin(a, needAdmin));
+            if (e == null) moved += needAdmin.Count; else failed.Add(e);
         }
         string msg = $"{a.Name} was uninstalled." + (moved > 0 ? $" {moved} folder(s) deleted." : "");
         if (failed.Count > 0) msg += "\n\nCould not remove:\n" + string.Join("\n", failed);

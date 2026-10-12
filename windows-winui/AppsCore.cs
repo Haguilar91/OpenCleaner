@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -9,6 +10,7 @@ class AppEntry
 {
     public string KeyPath, Name, Publisher, Version, InstallLocation, UninstallString;
     public long Size = -1;                          // bytes, -1 = not known yet
+    public bool Machine;                            // installed for all users (HKLM): its uninstaller needs admin
     public DateTime LastUsed = DateTime.MinValue;   // MinValue = unknown
 }
 
@@ -62,6 +64,7 @@ static class Apps
 
                         AppEntry e = new AppEntry();
                         e.KeyPath = (hive == Registry.CurrentUser ? "HKCU\\" : "HKLM\\") + path + "\\" + sub;
+                        e.Machine = hive == Registry.LocalMachine;
                         e.Name = name.Trim();
                         e.Publisher = (a.GetValue("Publisher") as string) ?? "";
                         e.Version = ver;
@@ -248,15 +251,17 @@ static class Apps
         return us;
     }
 
-    // Runs the program's own uninstaller (it shows its own window and may ask for administrator)
-    // and waits. Returns an error message, or null when it finished.
+    // Runs the program's own uninstaller (it shows its own window) and waits. Programs installed for
+    // all users, such as Microsoft Office, need administrator rights, so Windows shows the UAC prompt.
+    // Returns an error message, or null when it finished.
     public static string RunUninstaller(AppEntry a)
     {
         try
         {
             ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + Command(a) + "\"");
-            psi.UseShellExecute = false;
-            psi.CreateNoWindow = true;
+            psi.UseShellExecute = true;                 // required for the "runas" (UAC) verb
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            if (a.Machine) psi.Verb = "runas";
             using (Process p = Process.Start(psi))
             {
                 p.WaitForExit();
@@ -265,11 +270,75 @@ static class Apps
             }
             return null;
         }
+        catch (Win32Exception ex)
+        {
+            if (ex.NativeErrorCode == 1223) return "You cancelled the administrator prompt, so nothing was uninstalled.";
+            return ex.Message;
+        }
         catch (Exception ex) { return ex.Message; }
     }
 
-    // Permanently deletes a leftover folder (not the Recycle Bin), only inside AppData, ProgramData or the install folder.
+    // True while the program's uninstall entry is still in the registry. Some uninstallers (Office's
+    // Click-to-Run) hand off to another process and return at once; leftovers must wait until it is gone.
+    public static bool StillInstalled(AppEntry a)
+    {
+        try
+        {
+            RegistryKey hive = a.KeyPath.StartsWith("HKCU\\") ? Registry.CurrentUser : Registry.LocalMachine;
+            using (RegistryKey k = hive.OpenSubKey(a.KeyPath.Substring(5)))
+                return k != null;
+        }
+        catch (Exception) { return false; }
+    }
+
+    // Deletes leftover folders that Windows protects (ProgramData, Program Files) in one elevated step,
+    // after the same allowed-folder check as RemoveLeftover. Returns an error message, or null.
+    public static string RemoveLeftoversAsAdmin(AppEntry a, List<string> paths)
+    {
+        List<string> quoted = new List<string>();
+        foreach (string p in paths)
+        {
+            string why = RemoveLeftoverCheck(a, p);
+            if (why != null) return why;
+            quoted.Add("'" + p.Replace("'", "''") + "'");
+        }
+        if (quoted.Count == 0) return null;
+        try
+        {
+            ProcessStartInfo psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"Remove-Item -LiteralPath " +
+                string.Join(",", quoted.ToArray()) + " -Recurse -Force\"");
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            using (Process p = Process.Start(psi)) p.WaitForExit();
+            foreach (string p in paths)
+                if (Directory.Exists(p)) return "Could not delete " + p;
+            return null;
+        }
+        catch (Win32Exception ex)
+        {
+            if (ex.NativeErrorCode == 1223) return "You cancelled the administrator prompt; those folders were left.";
+            return ex.Message;
+        }
+        catch (Exception ex) { return ex.Message; }
+    }
+
+    // Permanently deletes a leftover folder (not the Recycle Bin), only inside AppData, ProgramData or the
+    // install folder. Returns null when done, NeedsAdmin when Windows refused access, or an error message.
+    public const string NeedsAdmin = "needs administrator";
+
     public static string RemoveLeftover(AppEntry a, string path)
+    {
+        string why = RemoveLeftoverCheck(a, path);
+        if (why != null) return why;
+        try { Directory.Delete(System.IO.Path.GetFullPath(path), true); return null; }
+        catch (UnauthorizedAccessException) { return NeedsAdmin; }
+        catch (Exception ex) { return ex.Message; }
+    }
+
+    // Null when the path is inside AppData, ProgramData or the program's install folder, else why not.
+    static string RemoveLeftoverCheck(AppEntry a, string path)
     {
         string full;
         try { full = System.IO.Path.GetFullPath(path).TrimEnd('\\'); }
@@ -288,8 +357,7 @@ static class Apps
                     && rr.Equals(a.InstallLocation.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))) ok = true;
         }
         if (!ok) return "Refused: outside the allowed folders";
-        try { Directory.Delete(full, true); return null; }
-        catch (Exception ex) { return ex.Message; }
+        return null;
     }
 }
 

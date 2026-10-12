@@ -9,9 +9,36 @@ final class CleanerStore: ObservableObject {
     @Published var message: String?
     @Published var confirming = false
     @Published var reviewing: CleanItem?
+    @Published var update: Release?          // a newer release on GitHub
+    @Published var updating = false
+    @Published var offerUpdate = false       // show the "Update to …?" question
     @Published var tab = 0          // 0 = Clean, 1 = Disk usage
 
     init() { updateFree() }
+
+    /// Asks GitHub for the latest release. Quiet on startup; `manual` also reports "up to date" and errors.
+    func checkForUpdates(manual: Bool) async {
+        do {
+            let r = try await Updater.latest()
+            if Updater.isNewer(r.version, than: Updater.currentVersion) {
+                update = r
+                if manual { offerUpdate = true }
+            } else if manual {
+                message = "OpenCleaner \(Updater.currentVersion) is up to date."
+            }
+        } catch {
+            if manual { message = "Could not check for updates: \(error.localizedDescription)" }
+        }
+    }
+
+    func installUpdate() async {
+        guard let r = update else { return }
+        updating = true
+        do { try await Updater.install(r) } catch {
+            updating = false
+            message = "Update failed: \(error.localizedDescription)\n\nYou can download it from \(r.page.absoluteString)"
+        }
+    }
 
     @discardableResult
     func updateFree() -> Int64 {

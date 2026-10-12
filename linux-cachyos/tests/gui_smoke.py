@@ -35,6 +35,10 @@ class App(oc.App):
             (6, "disk-map", lambda: win.explorer.map_btn.set_active(True)),
             (2, "disk-sort-oldest", lambda: win.explorer.sort_dd.set_selected(1)),
             (2, "disk-top5", lambda: win.explorer.top_dd.set_selected(1)),
+            (2, "disk-selected", lambda: (win.explorer.map_btn.set_active(False), win.explorer.top_dd.set_selected(0),
+                                          win.explorer._set_selected([e["path"] for e in win.explorer.ordered()[:2]]))),
+            (2, "map-selected", lambda: win.explorer.map_btn.set_active(True)),
+            (2, "permanent-mode", lambda: win.explorer.delete_dd.set_selected(1)),
             (2, "apps", lambda: win.views.set_visible_child_name("apps")),
             (3, "apps-sorted", lambda: win.apps_page.sort_dd.set_selected(1)),
         ]

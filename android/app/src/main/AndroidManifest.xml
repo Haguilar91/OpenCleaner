@@ -9,6 +9,10 @@
         tools:ignore="ProtectedPermissions" />
     <!-- Ask Android to uninstall an app (the system shows its own confirmation) -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Check GitHub for a newer release and download it -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Hand a downloaded update to Android's installer (the user confirms) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- List installed apps -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />

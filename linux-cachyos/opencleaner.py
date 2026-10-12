@@ -94,7 +94,7 @@ def load_css(provider, text):
         except TypeError:
             provider.load_from_data(text.encode())
 
-VERSION = "1.2"
+VERSION = "1.3"
 HOME = os.path.expanduser("~")
 JOURNAL_KEEP_MB = 200
 CACHE_MIN_BYTES = 100 * 1024 * 1024
@@ -527,6 +527,32 @@ def clean_item(item):
 
 # ---------------------------------------------------------------- UI
 
+# ---------------------------------------------------------------- settings
+SETTINGS_PATH = os.path.join(HOME, ".config", "opencleaner", "settings.json")
+DELETE_MODES = ["Move to Trash", "Delete permanently"]   # what Delete does in Disk usage (uninstall is always permanent)
+
+
+def load_settings():
+    import json
+    try:
+        with open(SETTINGS_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(**changes):
+    import json
+    data = load_settings()
+    data.update(changes)
+    try:
+        os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
+        with open(SETTINGS_PATH, "w") as f:
+            json.dump(data, f, indent=1)
+    except OSError:
+        pass
+
+
 # ---------------------------------------------------------------- file preview
 TEXT_EXT = {"txt", "log", "md", "json", "xml", "csv", "html", "htm", "ini", "conf", "cfg", "yaml",
             "yml", "py", "js", "sh", "srt", "vcf", "gpx", "toml", "desktop", "service"}
@@ -544,7 +570,7 @@ def read_head(path):
     return data.decode("utf-8", "replace")
 
 
-def show_preview(parent, path, on_trash=None):
+def show_preview(parent, path, on_trash=None, trash_label="Move to trash"):
     """Dialog previewing one file (image, cached thumbnail, or start of a text file) so the user
     can decide whether to delete it. on_trash(path) adds a Move to trash button."""
     f = Gio.File.new_for_path(path)
@@ -605,7 +631,7 @@ def show_preview(parent, path, on_trash=None):
     if video is not None:
         dlg.connect("closed", lambda *_: video.set_file(None))   # stop playback
     if on_trash:
-        trash = Gtk.Button(label="Move to trash", css_classes=["destructive-action"])
+        trash = Gtk.Button(label=trash_label, css_classes=["destructive-action"])
         trash.connect("clicked", lambda *_: (dlg.close(), on_trash(path)))
         buttons.append(trash)
     open_btn = Gtk.Button(label="Open")
@@ -733,6 +759,71 @@ SORTS = ["Biggest first", "Oldest first", "Newest first", "File type"]
 TOPS = [0, 5, 10, 50, 100]   # 0 = all
 
 
+# ---------------------------------------------------------------- updates (GitHub releases)
+GITHUB_LATEST = "https://api.github.com/repos/Haguilar91/OpenCleaner/releases/latest"
+
+
+def version_parts(v):
+    out = []
+    for part in v.strip().lstrip("vV").split("."):
+        digits = re.match(r"\d*", part).group()
+        out.append(int(digits or 0))
+    return out
+
+
+def is_newer(a, b):
+    x, y = version_parts(a), version_parts(b)
+    n = max(len(x), len(y))
+    return x + [0] * (n - len(x)) > y + [0] * (n - len(y))
+
+
+def latest_release():
+    """The latest GitHub release: {version, notes, page, assets: {name: url}}. Raises on failure."""
+    import json
+    import urllib.request
+    req = urllib.request.Request(GITHUB_LATEST, headers={"Accept": "application/vnd.github+json",
+                                                          "User-Agent": "OpenCleaner/" + VERSION})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        data = json.load(r)
+    return {"version": data["tag_name"].lstrip("vV"), "notes": data.get("body") or "",
+            "page": data["html_url"],
+            "assets": {a["name"]: a["browser_download_url"] for a in data.get("assets", [])}}
+
+
+def can_self_update():
+    """Only the single-file build can replace itself; running from source is updated with git or a package."""
+    return bool(getattr(sys, "frozen", False)) and os.access(os.path.dirname(sys.executable), os.W_OK)
+
+
+def install_update(rel):
+    """Download this machine's single-file build, check it against SHA256SUMS.txt and put it in place of
+    the running one (Linux allows replacing a running file). Returns the path to start."""
+    import hashlib
+    import platform
+    import urllib.request
+    arch = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
+    name = next((n for n in rel["assets"] if arch and n.endswith("-linux-" + arch)), None)
+    if not name:
+        raise RuntimeError(f"This release has no Linux build for {platform.machine()}.")
+    if "SHA256SUMS.txt" not in rel["assets"]:
+        raise RuntimeError("This release has no checksums, so it was not installed.")
+    with urllib.request.urlopen(rel["assets"]["SHA256SUMS.txt"], timeout=30) as r:
+        sums = r.read().decode()
+    target = sys.executable
+    tmp = target + ".new"
+    h = hashlib.sha256()
+    with urllib.request.urlopen(rel["assets"][name], timeout=60) as r, open(tmp, "wb") as f:
+        for chunk in iter(lambda: r.read(1 << 20), b""):
+            h.update(chunk)
+            f.write(chunk)
+    if not any(line.startswith(h.hexdigest()) and line.endswith(name) for line in sums.splitlines()):
+        os.remove(tmp)
+        raise RuntimeError("The download did not match the release checksum, so it was not installed.")
+    os.chmod(tmp, 0o755)
+    os.replace(tmp, target)
+    return target
+
+
 class Explorer(Gtk.Box):
     """Browse folders by size. Deleting only ever moves things to the trash."""
 
@@ -766,8 +857,16 @@ class Explorer(Gtk.Box):
         self.top_dd.connect("notify::selected", self._on_top)
         self.map_btn = Gtk.ToggleButton(icon_name="view-grid-symbolic", tooltip_text="Disk map")
         self.map_btn.connect("toggled", self._on_map_toggled)
+        self.selected = set()
+        self.syncing = False
+        self.delete_dd = Gtk.DropDown.new_from_strings(DELETE_MODES)
+        self.delete_dd.set_selected(1 if load_settings().get("delete_mode") == "permanent" else 0)
+        self.delete_dd.set_tooltip_text("What Delete does here (uninstalling is always permanent)")
+        self.delete_dd.connect("notify::selected", lambda dd, _p: save_settings(
+            delete_mode="permanent" if dd.get_selected() == 1 else "trash"))
+        self.delete_dd.connect("notify::selected", lambda *_: self._set_selected(self.selected))
         for w in (self.up_btn, home_btn, sys_btn, self.path_label, self.sort_dd, self.top_dd,
-                  self.map_btn):
+                  self.map_btn, self.delete_dd):
             bar.append(w)
         self.append(bar)
 
@@ -790,6 +889,13 @@ class Explorer(Gtk.Box):
         click = Gtk.GestureClick()
         click.connect("released", self._on_map_click)
         self.map_area.add_controller(click)
+        # right-click (or a long press on touch screens) selects a block for "Delete selected"
+        right = Gtk.GestureClick(button=3)
+        right.connect("pressed", lambda _g, _n, x, y: self._toggle_at(x, y))
+        self.map_area.add_controller(right)
+        hold = Gtk.GestureLongPress()
+        hold.connect("pressed", lambda _g, x, y: self._toggle_at(x, y))
+        self.map_area.add_controller(hold)
         legend = Gtk.Box(spacing=12, margin_start=14, margin_bottom=10, margin_top=6)
         for label, (r, g, b) in KINDS:
             colour = "#%02x%02x%02x" % (int(r * 255), int(g * 255), int(b * 255))
@@ -803,7 +909,45 @@ class Explorer(Gtk.Box):
         self.stack.add_named(sw, "list")
         self.stack.add_named(map_box, "map")
         self.append(self.stack)
+
+        self.sel_bar = Gtk.ActionBar(revealed=False)
+        self.sel_label = Gtk.Label(css_classes=["dim-label"])
+        clear = Gtk.Button(label="Clear", css_classes=["flat"])
+        clear.connect("clicked", lambda *_: self._set_selected(set()))
+        self.del_btn = Gtk.Button(css_classes=["destructive-action"])
+        self.del_btn.connect("clicked", lambda *_: self.confirm_delete(
+            [e["path"] for e in self.ordered() if e["path"] in self.selected]))
+        self.sel_bar.pack_start(self.sel_label)
+        self.sel_bar.pack_start(clear)
+        self.sel_bar.pack_end(self.del_btn)
+        self.append(self.sel_bar)
         self.go(HOME)
+
+    # -- selection (list checkboxes and right-click in the map share it)
+    def delete_label(self):
+        return DELETE_MODES[self.delete_dd.get_selected()]
+
+    def _set_selected(self, paths):
+        self.selected = set(paths)
+        self.syncing = True
+        for row in self.bars:
+            row.check.set_active(row.path in self.selected)
+        self.syncing = False
+        size = sum(self.sizes.get(p, 0) or 0 for p in self.selected)
+        self.sel_label.set_label(f"{len(self.selected)} selected · {fmt_size(size)}")
+        self.del_btn.set_label("Move selected to Trash" if self.delete_dd.get_selected() == 0
+                               else "Delete selected permanently")
+        self.sel_bar.set_revealed(bool(self.selected))
+        self.map_area.queue_draw()
+
+    def _toggle(self, path):
+        self._set_selected(self.selected ^ {path})
+
+    def _toggle_at(self, px, py):
+        for x, y, w, h, e in self.map_rects:
+            if x <= px < x + w and y <= py < y + h:
+                self._toggle(e["path"])
+                return
 
     # -- sort / top / view
     def _key(self, e):
@@ -859,6 +1003,14 @@ class Explorer(Gtk.Box):
             cr.set_source_rgb(r, g, b)
             cr.rectangle(x + 1, y + 1, max(w - 2, 0), max(h - 2, 0))
             cr.fill()
+            if e["path"] in self.selected:                 # selected: white outline and a check mark
+                cr.set_source_rgb(1, 1, 1)
+                cr.set_line_width(3)
+                cr.rectangle(x + 2.5, y + 2.5, max(w - 5, 0), max(h - 5, 0))
+                cr.stroke()
+                if w > 24 and h > 24:
+                    cr.move_to(x + w - 16, y + 16)
+                    cr.show_text("✓")
             if w > 64 and h > 34:
                 cr.set_source_rgb(1, 1, 1)
                 name = e["name"]
@@ -878,7 +1030,7 @@ class Explorer(Gtk.Box):
                 if e["is_dir"]:
                     self.go(e["path"])
                 else:
-                    show_preview(self.win, e["path"], self.confirm_trash)
+                    show_preview(self.win, e["path"], lambda p: self.confirm_delete([p]), self.delete_label())
                 return
 
     def set_root(self, path):
@@ -897,6 +1049,8 @@ class Explorer(Gtk.Box):
         self.path_label.set_label(path)
         self.up_btn.set_sensitive(path != self.root)
         self.sizes = {}
+        self.bars = []
+        self._set_selected(set())
         while (r := self.list.get_row_at_index(0)) is not None:
             self.list.remove(r)
         try:
@@ -952,6 +1106,9 @@ class Explorer(Gtk.Box):
             row.mtime = entry.stat(follow_symlinks=False).st_mtime
         except OSError:
             row.mtime = 0
+        row.check = Gtk.CheckButton(valign=Gtk.Align.CENTER, tooltip_text="Select")
+        row.check.connect("toggled", lambda c: self.syncing or self._toggle(entry.path))
+        row.add_prefix(row.check)
         row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir
                                  else "text-x-generic-symbolic"))
         row.size_label = Gtk.Label(label="…", css_classes=["dim-label"],
@@ -959,15 +1116,16 @@ class Explorer(Gtk.Box):
         row.bar = Gtk.LevelBar(min_value=0, max_value=1, value=0, width_request=90,
                                valign=Gtk.Align.CENTER)
         trash = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
-                           css_classes=["flat"], tooltip_text="Move to trash")
-        trash.connect("clicked", lambda *_: self.confirm_trash(entry.path))
+                           css_classes=["flat"], tooltip_text="Delete")
+        trash.connect("clicked", lambda *_: self.confirm_delete([entry.path]))
         for w in (row.bar, row.size_label, trash):
             row.add_suffix(w)
         if is_dir:
             row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
             row.connect("activated", lambda *_: self.go(entry.path))
         else:
-            row.connect("activated", lambda *_: show_preview(self.win, entry.path, self.confirm_trash))
+            row.connect("activated", lambda *_: show_preview(self.win, entry.path, lambda p: self.confirm_delete([p]),
+                                                             self.delete_label()))
         self.list.append(row)
         self.bars.append(row)
 
@@ -992,30 +1150,50 @@ class Explorer(Gtk.Box):
         self.progress.set_fraction(self.measured / max(count, 1))
         self.progress.set_visible(self.pending > 0)
 
-    def confirm_trash(self, path):
-        dlg = AlertDialog(heading="Move to trash?", body=path)
+    def confirm_delete(self, paths):
+        """Ask first. Move to Trash or delete permanently, as the Delete setting says."""
+        if not paths:
+            return
+        permanent = self.delete_dd.get_selected() == 1
+        what = f'"{os.path.basename(paths[0])}"' if len(paths) == 1 else f"{len(paths)} items"
+        names = "\n".join(paths[:12]) + (f"\n…and {len(paths) - 12} more" if len(paths) > 12 else "")
+        note = ("This cannot be undone: nothing goes to the Trash." if permanent
+                else "You can restore them from the Trash.")
+        dlg = AlertDialog(heading=(f"Delete {what} permanently?" if permanent else f"Move {what} to the Trash?"),
+                          body=note + "\n\n" + names)
         dlg.add_response("cancel", "Cancel")
-        dlg.add_response("trash", "Move to trash")
-        dlg.set_response_appearance("trash", Adw.ResponseAppearance.DESTRUCTIVE)
+        dlg.add_response("delete", DELETE_MODES[1 if permanent else 0])
+        dlg.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dlg.set_default_response("cancel")
-        dlg.connect("response", lambda d, r: r == "trash" and self.trash(path))
+        dlg.connect("response", lambda d, r: r == "delete" and self.delete(paths, permanent))
         dlg.present(self.win)
 
-    def trash(self, path):
+    def delete(self, paths, permanent):
         def work():
-            r = run(["gio", "trash", "--", path])
-            GLib.idle_add(self._trashed, path, r)
+            failed = []
+            for path in paths:
+                try:
+                    if permanent:
+                        safe_remove(path)             # only inside the home folder
+                    else:
+                        r = run(["gio", "trash", "--", path])
+                        if r.returncode != 0:
+                            raise OSError((r.stderr or "failed").strip())
+                except Exception as e:  # noqa: BLE001
+                    failed.append(f"{os.path.basename(path)}: {e}")
+            GLib.idle_add(self._deleted, len(paths) - len(failed), failed, permanent)
         threading.Thread(target=work, daemon=True).start()
 
-    def _trashed(self, path, r):
-        if r.returncode == 0:
-            self.win.toast.add_toast(Adw.Toast(title="Moved to trash (empty trash to free space)"))
-            self.win.update_free()
-            self.reload()
-        else:
-            dlg = AlertDialog(heading="Could not trash", body=(r.stderr or "failed").strip())
+    def _deleted(self, done, failed, permanent):
+        if done:
+            self.win.toast.add_toast(Adw.Toast(
+                title=f"{done} item(s) deleted" if permanent else f"{done} item(s) moved to the Trash (empty it to free space)"))
+        if failed:
+            dlg = AlertDialog(heading="Some items could not be deleted", body="\n".join(failed[:12]))
             dlg.add_response("ok", "OK")
             dlg.present(self.win)
+        self.win.update_free()
+        self.reload()
 
 
 # ---------------------------------------------------------------- installed apps
@@ -1315,6 +1493,11 @@ class Window(Adw.ApplicationWindow):
                           tooltip_text=f"OpenCleaner {VERSION}")
         header.pack_start(brand)
         header.pack_start(self.scan_btn)
+        self.update = None
+        self.update_btn = Gtk.Button(icon_name="software-update-available-symbolic",
+                                     tooltip_text=f"Check for updates (OpenCleaner {VERSION})")
+        self.update_btn.connect("clicked", lambda *_: self.on_update_clicked())
+        header.pack_end(self.update_btn)
         self.free_label = Gtk.Label(css_classes=["dim-label"])
         header.pack_end(self.free_label)
         self.views = Adw.ViewStack()
@@ -1363,6 +1546,79 @@ class Window(Adw.ApplicationWindow):
         self.free_before = None
         self.update_free()
         self.scan()
+        self.check_updates(manual=False)
+
+    # -- updates
+    def check_updates(self, manual):
+        def work():
+            try:
+                rel = latest_release()
+                err = None
+            except Exception as e:  # noqa: BLE001  offline, rate limited...
+                rel, err = None, str(e)
+            GLib.idle_add(self._checked, rel, err, manual)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _checked(self, rel, err, manual):
+        if rel and is_newer(rel["version"], VERSION):
+            self.update = rel
+            self.update_btn.set_icon_name("")
+            self.update_btn.set_label(f"Update to {rel['version']}")
+            self.update_btn.add_css_class("suggested-action")
+            if manual:
+                self.offer_update()
+        elif manual:
+            text = f"Could not check for updates: {err}" if err else f"OpenCleaner {VERSION} is up to date"
+            self.toast.add_toast(Adw.Toast(title=text))
+
+    def on_update_clicked(self):
+        if self.update:
+            self.offer_update()
+        else:
+            self.check_updates(manual=True)
+
+    def offer_update(self):
+        rel = self.update
+        if can_self_update():
+            body = (f"You have {VERSION}. The update is downloaded from GitHub, checked against the release "
+                    "checksums, and replaces this program; it then restarts.")
+        else:
+            body = (f"You have {VERSION}, running from source or from a folder OpenCleaner cannot write to. "
+                    "Update it with git pull or your package manager, or download it from the release page.")
+        dlg = AlertDialog(heading=f"Update to OpenCleaner {rel['version']}?", body=body + "\n\n" + rel["notes"][:600])
+        dlg.add_response("later", "Later")
+        dlg.add_response("page", "Release page")
+        if can_self_update():
+            dlg.add_response("update", "Update and restart")
+            dlg.set_response_appearance("update", Adw.ResponseAppearance.SUGGESTED)
+        dlg.connect("response", lambda d, r: self._update_response(r))
+        dlg.present(self)
+
+    def _update_response(self, response):
+        if response == "page":
+            Gio.AppInfo.launch_default_for_uri(self.update["page"], None)
+        elif response == "update":
+            self.update_btn.set_sensitive(False)
+            self.update_btn.set_label("Updating…")
+
+            def work():
+                try:
+                    path, err = install_update(self.update), None
+                except Exception as e:  # noqa: BLE001
+                    path, err = None, str(e)
+                GLib.idle_add(self._updated, path, err)
+            threading.Thread(target=work, daemon=True).start()
+
+    def _updated(self, path, err):
+        if err:
+            self.update_btn.set_sensitive(True)
+            self.update_btn.set_label(f"Update to {self.update['version']}")
+            dlg = AlertDialog(heading="Update failed", body=err + "\n\n" + self.update["page"])
+            dlg.add_response("ok", "OK")
+            dlg.present(self)
+            return
+        subprocess.Popen([path], env=host_env(), start_new_session=True)   # the new version
+        self.get_application().quit()
 
     def update_free(self):
         u = shutil.disk_usage("/")
