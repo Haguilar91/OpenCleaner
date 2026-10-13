@@ -61,7 +61,16 @@ public sealed partial class MainWindow : Window
             var tag = (e.SelectedItem as NavigationViewItem)?.Tag as string;
             host.Content = tag == "disk" ? disk : tag == "apps" ? appsPage : clean;
         };
-        nav.SelectedItem = cleanItem;
+        // launch options for screenshots: --tab clean|disk|apps (or 0|1|2), --root <folder>, --map
+        string[] argv = Environment.GetCommandLineArgs();
+        string Arg(string name)
+        {
+            int i = Array.IndexOf(argv, name);
+            return i >= 0 && i + 1 < argv.Length ? argv[i + 1] : null;
+        }
+        disk.StartWith(Arg("--root"), argv.Contains("--map"));
+        string tab = Arg("--tab");
+        nav.SelectedItem = tab is "disk" or "1" ? diskItem : tab is "apps" or "2" ? appsItem : cleanItem;
 
         Root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

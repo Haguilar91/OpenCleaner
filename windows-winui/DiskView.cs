@@ -206,6 +206,17 @@ public sealed class DiskView : UserControl
         };
     }
 
+    /// <summary>Launch options (--root, --map): the folder to open first and whether to show the map.</summary>
+    public void StartWith(string folder, bool map)
+    {
+        if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder)) root = folder;
+        if (!map) return;
+        mapBtn.IsChecked = true;
+        mapMode = true;
+        scroll.Visibility = Visibility.Collapsed;
+        mapPanel.Visibility = Visibility.Visible;
+    }
+
     private void Load(string path)
     {
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;

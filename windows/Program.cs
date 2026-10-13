@@ -1652,12 +1652,30 @@ namespace OpenCleaner
             BuildDiskTab(diskTab);
             BuildAppsTab(appsTab);
             UpdateFree();
-            Shown += delegate { Scan(); LoadDisk(Environment.GetEnvironmentVariable("USERPROFILE")); LoadApps(); CheckUpdates(false); };
+            Shown += delegate
+            {
+                // launch options for screenshots: --tab clean|disk|apps (or 0|1|2), --root <folder>, --map
+                string tab = LaunchArg("--tab"), folder = LaunchArg("--root");
+                if (folder != null && Directory.Exists(folder)) root = folder;
+                else folder = Environment.GetEnvironmentVariable("USERPROFILE");
+                if (tab == "disk" || tab == "1") tabs.SelectedIndex = 1;
+                else if (tab == "apps" || tab == "2") tabs.SelectedIndex = 2;
+                if (Array.IndexOf(LaunchArgs, "--map") >= 0) mapBtn.Checked = true;
+                Scan(); LoadDisk(folder); LoadApps(); CheckUpdates(false);
+            };
 
             // Layout above is in 96 DPI pixels; scale it to the screen (fonts already scale on their own).
             AutoScaleDimensions = new SizeF(96f, 96f);
             AutoScaleMode = AutoScaleMode.Dpi;
             ResumeLayout(false);
+        }
+
+        public static string[] LaunchArgs = new string[0];
+
+        static string LaunchArg(string name)
+        {
+            int i = Array.IndexOf(LaunchArgs, name);
+            return i >= 0 && i + 1 < LaunchArgs.Length ? LaunchArgs[i + 1] : null;
         }
 
         // Pixel sizes that auto-scaling does not touch (list columns, row heights) go through S().
@@ -1983,11 +2001,11 @@ namespace OpenCleaner
         {
             Panel tools = new Panel();
             tools.Dock = DockStyle.Top; tools.Height = 40;
-            Label sortLabel = new Label(); sortLabel.Text = "Sort:"; sortLabel.SetBounds(10, 12, 34, 20);
+            Label sortLabel = new Label(); sortLabel.Text = "Sort:"; sortLabel.SetBounds(0, 12, 44, 20); sortLabel.TextAlign = ContentAlignment.TopRight;
             appSortBox.DropDownStyle = ComboBoxStyle.DropDownList;
             appSortBox.Items.AddRange(new object[] { "Biggest first", "Least recently used", "Recently used", "Name" });
             appSortBox.SelectedIndex = 0; appSortBox.SetBounds(46, 8, 150, 28);
-            Label topLabel = new Label(); topLabel.Text = "Show:"; topLabel.SetBounds(206, 12, 40, 20);
+            Label topLabel = new Label(); topLabel.Text = "Show:"; topLabel.SetBounds(196, 12, 50, 20); topLabel.TextAlign = ContentAlignment.TopRight;
             appTopBox.DropDownStyle = ComboBoxStyle.DropDownList;
             appTopBox.Items.AddRange(new object[] { "All", "Top 5", "Top 10", "Top 50", "Top 100" });
             appTopBox.SelectedIndex = 0; appTopBox.SetBounds(248, 8, 80, 28);
@@ -2245,11 +2263,11 @@ namespace OpenCleaner
             // sort, top N and the disk map toggle
             Panel tools = new Panel();
             tools.Dock = DockStyle.Top; tools.Height = 38;
-            Label sortLabel = new Label(); sortLabel.Text = "Sort:"; sortLabel.SetBounds(10, 11, 34, 20);
+            Label sortLabel = new Label(); sortLabel.Text = "Sort:"; sortLabel.SetBounds(0, 11, 44, 20); sortLabel.TextAlign = ContentAlignment.TopRight;
             sortBox.DropDownStyle = ComboBoxStyle.DropDownList;
             sortBox.Items.AddRange(new object[] { "Biggest first", "Oldest first", "Newest first", "File type" });
             sortBox.SelectedIndex = 0; sortBox.SetBounds(46, 8, 120, 28);
-            Label topLabel = new Label(); topLabel.Text = "Show:"; topLabel.SetBounds(180, 11, 40, 20);
+            Label topLabel = new Label(); topLabel.Text = "Show:"; topLabel.SetBounds(168, 11, 52, 20); topLabel.TextAlign = ContentAlignment.TopRight;
             topBox.DropDownStyle = ComboBoxStyle.DropDownList;
             topBox.Items.AddRange(new object[] { "All", "Top 5", "Top 10", "Top 50", "Top 100" });
             topBox.SelectedIndex = 0; topBox.SetBounds(222, 8, 80, 28);
@@ -2520,8 +2538,9 @@ namespace OpenCleaner
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            MainForm.LaunchArgs = args;
             try { Native.SetProcessDPIAware(); } catch { }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

@@ -97,6 +97,8 @@ Windows, WinUI 3 (`windows-winui/`):
 <p>
   <img src="docs/screenshots/windows-winui-clean.png" width="49%" alt="WinUI: Clean page">
   <img src="docs/screenshots/windows-winui-disk.png" width="49%" alt="WinUI: Disk usage page">
+  <img src="docs/screenshots/windows-winui-map.png" width="49%" alt="WinUI: disk map">
+  <img src="docs/screenshots/windows-winui-apps.png" width="49%" alt="WinUI: Apps page">
 </p>
 
 Windows, WinForms (`windows/`):
@@ -104,6 +106,8 @@ Windows, WinForms (`windows/`):
 <p>
   <img src="docs/screenshots/windows-winforms-clean.png" width="49%" alt="WinForms: Clean tab">
   <img src="docs/screenshots/windows-winforms-disk.png" width="49%" alt="WinForms: Disk usage tab">
+  <img src="docs/screenshots/windows-winforms-map.png" width="49%" alt="WinForms: disk map">
+  <img src="docs/screenshots/windows-winforms-apps.png" width="49%" alt="WinForms: Apps tab">
 </p>
 
 ## What they clean

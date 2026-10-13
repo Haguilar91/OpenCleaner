@@ -96,6 +96,10 @@ Windows already have them).
   Mac screenshots: `open -n macos/build/OpenCleaner.app --args --tab 0|1|2 [--root <folder>] [--map]
   --snapshot <file.png> [--snapshot-delay s]` makes the app save its own window and quit (no Screen
   Recording permission needed). Use a sample folder for Disk usage, not a real home folder.
+- Windows screenshots: `windows/take_screenshots.ps1`, run by the user inside the VM (copy it with the `windows` and
+  `windows-winui` folders to `~/Winshared/shots`, then `powershell -ExecutionPolicy Bypass -File Z:\shots\take_screenshots.ps1`).
+  It builds both apps, makes a sample folder and uses the `--tab clean|disk|apps`, `--root`, `--map` launch options.
+  `utmctl exec` runs as SYSTEM with no desktop, so Claude cannot take them itself.
 - Wine's list view does not draw groups and may not render some glyphs, so judge the look on real
   Windows, not Wine.
 - **Android**: since Android 11 an app cannot clear other apps' caches or read their private data.
