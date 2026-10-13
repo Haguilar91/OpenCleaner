@@ -54,6 +54,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -78,6 +79,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -102,8 +105,12 @@ fun Ico(res: Int, desc: String? = null, tint: Color = LocalContentColor.current,
 
 // ---------------------------------------------------------------- permission
 @Composable
-fun PermissionScreen() {
+fun PermissionScreen(onGranted: () -> Unit = {}) {
     val ctx = LocalContext.current
+    var noSettings by remember { mutableStateOf(false) }
+    // Android 9-10 (older Fire TV): the classic storage permission, asked right here
+    val legacy = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { onGranted() }
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -111,18 +118,20 @@ fun PermissionScreen() {
     ) {
         Text("OpenCleaner needs file access", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "\nTo find and delete junk files on your phone, Android requires you to allow " +
+            "\nTo find and delete junk files, Android requires you to allow " +
                 "\"All files access\". The app only deletes items you tick and confirm, " +
                 "and never touches other apps' private data.\n",
             style = MaterialTheme.typography.bodyMedium,
         )
-        Button(onClick = {
-            val i = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                Uri.parse("package:${ctx.packageName}"))
-            try { ctx.startActivity(i) } catch (e: Exception) {
-                ctx.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-            }
-        }) { Text("Open settings") }
+        Button(modifier = Modifier.focusRing(), onClick = {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) legacy.launch(Access.legacyStorage)
+            else if (!Access.openAllFilesSettings(ctx)) noSettings = true
+        }) { Text(if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) "Allow access" else "Open settings") }
+        if (noSettings) {
+            Text("\nThis device has no \"All files access\" settings page (common on TVs). Grant it once from a " +
+                "computer with adb:\n\n" + Access.adbCommand(ctx, "MANAGE_EXTERNAL_STORAGE") +
+                "\n\nthen reopen OpenCleaner.", style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 
@@ -192,6 +201,7 @@ fun CleanScreen(vm: CleanVm) {
 private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
+            .focusRing()
             .clickable(enabled = !item.empty) { vm.toggle(item.id) }
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -277,6 +287,25 @@ fun StorageScreen(onChanged: () -> Unit) {
     val measuring = measured < entries.size
     val percent = if (entries.isEmpty()) 100 else measured * 100 / entries.size
     val visible = arrange(entries, sort, top)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val firstFocus = remember { FocusRequester() }
+    if (BuildConfig.IS_TV) {
+        // with a remote, opening a folder should put the focus on its first item, not back on the menu
+        // wait until every size is in, so the list has its final order (the biggest item first)
+        val settled = entries.isNotEmpty() && entries.all { it.size != null } && entries.all { it.file.parentFile == path }
+        LaunchedEffect(path, mapMode, settled) {
+            if (settled) {
+                kotlinx.coroutines.delay(300)
+                listState.scrollToItem(0)
+                try { firstFocus.requestFocus() } catch (e: IllegalStateException) { /* nothing focusable yet */ }
+            }
+        }
+    }
+    val firstPath = visible.firstOrNull()?.file?.path
+    LaunchedEffect(firstPath, sort, top) {
+        // a re-sort put a different item first: show the top, unless the user has scrolled down the list
+        if (listState.firstVisibleItemIndex <= 2) listState.scrollToItem(0)
+    }
     val maxSize = (visible.maxOfOrNull { it.size ?: 0 } ?: 1).coerceAtLeast(1)
 
     Column(Modifier.fillMaxSize()) {
@@ -285,9 +314,6 @@ fun StorageScreen(onChanged: () -> Unit) {
             Text(path.path.removePrefix(root.path).ifEmpty { "/" }.let { "Internal storage$it" },
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconButton(onClick = { mapMode = !mapMode }) {
-                Ico(if (mapMode) R.drawable.ic_list else R.drawable.ic_map, if (mapMode) "List view" else "Map view")
-            }
         }
         Text((if (measuring) "Measuring $percent% ($measured of ${entries.size} items) · " else "") +
             "Total ${fmt(total)}", style = MaterialTheme.typography.bodySmall,
@@ -317,6 +343,10 @@ fun StorageScreen(onChanged: () -> Unit) {
                     }
                 }
             }
+            Spacer(Modifier.weight(1f))
+            IconButton(modifier = Modifier.focusRing(), onClick = { mapMode = !mapMode }) {
+                Ico(if (mapMode) R.drawable.ic_list else R.drawable.ic_map, if (mapMode) "List view" else "Map view")
+            }
         }
         HorizontalDivider()
         fun toggle(e: Entry) {
@@ -324,12 +354,15 @@ fun StorageScreen(onChanged: () -> Unit) {
         }
         Box(Modifier.weight(1f)) {
         if (mapMode) {
-            StorageMap(visible, selected, onToggle = ::toggle) { e -> if (e.file.isDirectory) path = e.file else preview = e.file }
+            StorageMap(visible, selected, firstFocus, onToggle = ::toggle,
+                onDelete = { e -> toDelete = listOf(e.file) }) { e -> if (e.file.isDirectory) path = e.file else preview = e.file }
         } else
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(visible, key = { it.file.path }) { e ->
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            itemsIndexed(visible, key = { _, it -> it.file.path }) { i, e ->
                 Column(
                     Modifier.fillMaxWidth()
+                        .then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
+                        .focusRing()
                         .clickable { if (e.file.isDirectory) path = e.file else preview = e.file }
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
@@ -346,6 +379,7 @@ fun StorageScreen(onChanged: () -> Unit) {
                     LinearProgressIndicator(
                         progress = { (e.size ?: 0).toFloat() / maxSize },
                         modifier = Modifier.fillMaxWidth(),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                 }
             }
@@ -408,9 +442,33 @@ fun StorageScreen(onChanged: () -> Unit) {
  *  Tap opens a folder or previews a file; long-press selects it for "Delete selected". */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StorageMap(entries: List<Entry>, selected: Set<String>, onToggle: (Entry) -> Unit, onOpen: (Entry) -> Unit) {
+private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: FocusRequester,
+                       onToggle: (Entry) -> Unit, onDelete: (Entry) -> Unit, onOpen: (Entry) -> Unit) {
     val shown = remember(entries) {
         entries.filter { (it.size ?: 0) > 0 }.sortedByDescending { it.size }.take(150)
+    }
+    // TV remotes have no long-press for keys in Compose: OK on a block opens a small action menu instead
+    var actions by remember { mutableStateOf<Entry?>(null) }
+    actions?.let { e ->
+        AlertDialog(
+            onDismissRequest = { actions = null },
+            title = { Text(e.file.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = { Text(fmt(e.size)) },
+            confirmButton = {
+                Row {
+                    TextButton(modifier = Modifier.focusRing(), onClick = { actions = null; onOpen(e) }) {
+                        Text(if (e.file.isDirectory) "Open" else "Preview")
+                    }
+                    TextButton(modifier = Modifier.focusRing(), onClick = { actions = null; onToggle(e) }) {
+                        Text(if (e.file.path in selected) "Deselect" else "Select")
+                    }
+                    TextButton(modifier = Modifier.focusRing(), onClick = { actions = null; onDelete(e) }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            dismissButton = { TextButton(modifier = Modifier.focusRing(), onClick = { actions = null }) { Text("Close") } },
+        )
     }
     Column(Modifier.fillMaxSize().padding(8.dp)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -435,7 +493,10 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, onToggle: (E
                         .clip(RoundedCornerShape(3.dp))
                         .background(Kind.of(e.file).color)
                         .then(if (e.file.path in selected) Modifier.border(3.dp, Color.White, RoundedCornerShape(3.dp)) else Modifier)
-                        .combinedClickable(onClick = { onOpen(e) }, onLongClick = { onToggle(e) })
+                        .then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
+                        .focusRing()
+                        .combinedClickable(onClick = { if (BuildConfig.IS_TV) actions = e else onOpen(e) },
+                                           onLongClick = { onToggle(e) })
                         .padding(4.dp)
                 ) {
                     if (e.file.path in selected && w > 24.dp && h > 24.dp) {
@@ -452,7 +513,8 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, onToggle: (E
                 }
             }
         }
-        Text("Long-press a block to select it", style = MaterialTheme.typography.labelSmall,
+        Text(if (BuildConfig.IS_TV) "Press OK on a block to open, select or delete it" else "Long-press a block to select it",
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Kind.values().forEach { k ->
@@ -489,11 +551,7 @@ private fun lastUsedText(ts: Long): String =
     if (ts <= 0) "last used: unknown"
     else "last used " + DateUtils.getRelativeTimeSpanString(ts, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS)
 
-private fun hasUsageAccess(ctx: Context): Boolean {
-    val ops = ctx.getSystemService(AppOpsManager::class.java)
-    val mode = ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
-    return mode == AppOpsManager.MODE_ALLOWED
-}
+private fun hasUsageAccess(ctx: Context): Boolean = Access.hasUsageAccess(ctx)
 
 private fun loadApps(ctx: Context): List<AppRow> {
     val pm = ctx.packageManager
@@ -512,7 +570,8 @@ private fun loadApps(ctx: Context): List<AppRow> {
                 val u = used[a.packageName]
                 AppRow(pm.getApplicationLabel(a).toString(), a.packageName,
                     st.appBytes + st.dataBytes + st.cacheBytes, st.cacheBytes, st.dataBytes,
-                    maxOf(u?.lastTimeUsed ?: 0L, u?.lastTimeVisible ?: 0L))
+                    maxOf(u?.lastTimeUsed ?: 0L,
+                        if (android.os.Build.VERSION.SDK_INT >= 29) u?.lastTimeVisible ?: 0L else 0L))
             } catch (e: Exception) { null }
         }
         .sortedByDescending { it.total }
@@ -540,7 +599,8 @@ fun AppsScreen() {
     }
     // Android's own "free up space" screen, falling back to the storage settings
     fun systemCleaner() {
-        val tries = listOf(Intent(StorageManager.ACTION_CLEAR_APP_CACHE),
+        val tries = listOfNotNull(
+            if (android.os.Build.VERSION.SDK_INT >= 30) Intent(StorageManager.ACTION_CLEAR_APP_CACHE) else null,
             Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS))
         for (i in tries) {
             try { ctx.startActivity(i); return } catch (e: Exception) { /* try the next one */ }
@@ -562,8 +622,14 @@ fun AppsScreen() {
             Text("Allow usage access", style = MaterialTheme.typography.titleMedium)
             Text("\nAndroid only shares each app's size if you allow \"Usage access\". " +
                 "OpenCleaner only reads sizes. It cannot see what you do in apps.\n")
-            Button(onClick = { ctx.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }) {
+            var noSettings by remember { mutableStateOf(false) }
+            Button(modifier = Modifier.focusRing(), onClick = { if (!Access.openUsageSettings(ctx)) noSettings = true }) {
                 Text("Open settings")
+            }
+            if (noSettings) {
+                Text("\nThis device has no \"Usage access\" settings page (common on TVs). Grant it once from a " +
+                    "computer with adb:\n\n" + Access.adbCommand(ctx, "GET_USAGE_STATS") +
+                    "\n\nthen come back to this tab.", style = MaterialTheme.typography.bodyMedium)
             }
         }
         return
@@ -592,7 +658,7 @@ fun AppsScreen() {
                 }
             }
         }
-        Text("Tap an app to open its settings, or the bin to uninstall it. Uninstalling is permanent and removes its data; Android asks you to confirm.",
+        Text((if (BuildConfig.IS_TV) "Press OK on an app" else "Tap an app") + " to open its settings, or the bin to uninstall it. Uninstalling is permanent and removes its data; Android asks you to confirm.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp, 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -624,7 +690,7 @@ fun AppsScreen() {
         LazyColumn(Modifier.fillMaxSize()) {
             items(list, key = { it.pkg }) { a ->
                 Row(
-                    Modifier.fillMaxWidth().clickable {
+                    Modifier.fillMaxWidth().focusRing().clickable {
                         ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                             Uri.parse("package:${a.pkg}")))
                     }.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -723,7 +789,10 @@ private fun loadThumb(f: File, mime: String): Bitmap? = try {
             while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
             BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = sample })
         }
-        mime.startsWith("video/") -> ThumbnailUtils.createVideoThumbnail(f, Size(720, 720), null)
+        mime.startsWith("video/") ->
+            if (android.os.Build.VERSION.SDK_INT >= 29) ThumbnailUtils.createVideoThumbnail(f, Size(720, 720), null)
+            else @Suppress("DEPRECATION")
+                ThumbnailUtils.createVideoThumbnail(f.path, android.provider.MediaStore.Video.Thumbnails.MINI_KIND)
         else -> null
     }
 } catch (e: Exception) { null }

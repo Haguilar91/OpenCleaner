@@ -12,6 +12,23 @@ Kotlin + Jetpack Compose. Same idea as the desktop apps, within what Android all
 Nothing is deleted until you tick items and confirm. Deletes are limited to shared storage and
 never touch `Android/data` or `Android/obb`.
 
+## TV app (Android TV, Google TV, Fire TV)
+
+The same project builds a second APK for TVs (`tv` flavor, application id `com.opencleaner.tv`,
+Android 9+ so older Fire TV on Fire OS 7 works too). It shows in the TV launcher with a banner, needs
+no touchscreen, and is laid out for the remote: a navigation rail on the left, TV-safe margins, a
+highlight around the focused item, and on the disk map OK opens a menu (Open / Select / Delete)
+because remotes have no long-press.
+
+On Android 9-10 the app asks for the classic storage permission. Many TVs have no settings page for
+"All files access" or "Usage access"; then the app shows the command that grants it, for example:
+
+    adb shell appops set com.opencleaner.tv MANAGE_EXTERNAL_STORAGE allow
+    adb shell appops set com.opencleaner.tv GET_USAGE_STATS allow
+
+Build: `gradle assembleTvDebug` (phone: `gradle assemblePhoneDebug`). Tested on the Google TV emulator
+(Android 12); the Android 9 path needs a real older Fire TV (no ARM emulator image exists for it).
+
 ## Permissions
 
 - **All files access**: needed to find and delete junk on shared storage. Requested on first launch.

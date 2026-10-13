@@ -18,7 +18,7 @@ data class Release(val version: String, val notes: String, val page: String, val
  */
 object Updater {
     private const val API = "https://api.github.com/repos/Haguilar91/OpenCleaner/releases/latest"
-    private const val APK_SUFFIX = "-android.apk"
+    private val APK_SUFFIX = BuildConfig.APK_SUFFIX     // "-android.apk" (phone) or "-androidtv.apk" (TV)
 
     fun currentVersion(ctx: Context): String =
         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0"

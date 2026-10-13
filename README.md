@@ -15,7 +15,7 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | `windows/` | OpenCleaner for Windows (C# WinForms) | on Windows: double-click `windows/build.bat`, then `OpenCleaner.exe` |
 | `windows-winui/` | OpenCleaner for Windows, modern WinUI 3 look (needs .NET 8 SDK) | on Windows: `windows-winui\build.bat`, then `publish\win-x64\OpenCleaner.exe` |
 | `installer/` | Windows installer (Inno Setup) for the WinUI app: x64, arm64 or x86 | on Windows: `installer\build_installer.bat`, then `dist\OpenCleaner-Setup-<arch>.exe` (see [installer/README.md](installer/README.md)) |
-| `android/` | OpenCleaner for Android (Kotlin + Compose) | build with Android Studio or `gradle assembleDebug`, then install the APK |
+| `android/` | OpenCleaner for Android phones (Kotlin + Compose) and **for Android TV / Google TV / Fire TV** (same project, `tv` flavor, remote-friendly) | `gradle assemblePhoneDebug` / `gradle assembleTvDebug`, then install the APK |
 
 ## Features
 
@@ -54,29 +54,42 @@ the 10 oldest items.
 
 ## Screenshots
 
-Screenshots were taken before some of the newer features (preview, map, sort) and the new
-branding were added.
+macOS, Linux, Android and Android TV screenshots are from 1.3; the Windows ones are older.
 
 Linux (`linux-cachyos/`):
 
 <p>
   <img src="docs/screenshots/linux-clean.png" width="49%" alt="Linux: Clean view">
-  <img src="docs/screenshots/linux-disk.png" width="49%" alt="Linux: Disk usage view">
+  <img src="docs/screenshots/linux-disk.png" width="49%" alt="Linux: Disk usage list">
+  <img src="docs/screenshots/linux-map.png" width="49%" alt="Linux: disk map with a selected folder">
+  <img src="docs/screenshots/linux-apps.png" width="49%" alt="Linux: Apps page">
 </p>
 
 macOS (`macos/`):
 
 <p>
   <img src="docs/screenshots/macos-clean.png" width="49%" alt="macOS: Clean tab">
-  <img src="docs/screenshots/macos-disk.png" width="49%" alt="macOS: Disk usage tab">
+  <img src="docs/screenshots/macos-disk.png" width="49%" alt="macOS: Disk usage list">
+  <img src="docs/screenshots/macos-map.png" width="49%" alt="macOS: disk map">
+  <img src="docs/screenshots/macos-apps.png" width="49%" alt="macOS: Apps page">
 </p>
 
 Android (`android/`):
 
 <p>
-  <img src="docs/screenshots/android-clean.png" width="32%" alt="Android: Clean tab">
-  <img src="docs/screenshots/android-storage.png" width="32%" alt="Android: Storage tab">
-  <img src="docs/screenshots/android-apps.png" width="32%" alt="Android: Apps tab">
+  <img src="docs/screenshots/android-clean.png" width="24%" alt="Android: Clean tab">
+  <img src="docs/screenshots/android-storage.png" width="24%" alt="Android: Storage tab">
+  <img src="docs/screenshots/android-map.png" width="24%" alt="Android: disk map with two folders selected">
+  <img src="docs/screenshots/android-apps.png" width="24%" alt="Android: Apps tab">
+</p>
+
+Android TV / Google TV / Fire TV (`android/`, `tv` build), all driven with the remote:
+
+<p>
+  <img src="docs/screenshots/android-tv-storage.png" width="49%" alt="TV: Storage list">
+  <img src="docs/screenshots/android-tv-map.png" width="49%" alt="TV: disk map with a selected block">
+  <img src="docs/screenshots/android-tv-clean.png" width="49%" alt="TV: Clean">
+  <img src="docs/screenshots/android-tv-apps.png" width="49%" alt="TV: Apps">
 </p>
 
 Windows, WinUI 3 (`windows-winui/`):

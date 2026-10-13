@@ -29,9 +29,12 @@ class App(oc.App):
         super().do_activate()
         state["win"] = self.props.active_window
         win = state["win"]
+        if os.environ.get("TAG") == "docs":
+            win.set_default_size(1180, 820)     # docs screenshots: wide enough for every label
         steps = [
             (8, "clean", lambda: None),
-            (2, "disk-list", lambda: (win.views.set_visible_child_name("explore"), win.explorer.set_root("/usr"))),
+            (2, "disk-list", lambda: (win.views.set_visible_child_name("explore"),
+                                      win.explorer.set_root(os.environ.get("SHOT_ROOT", "/usr")))),
             (6, "disk-map", lambda: win.explorer.map_btn.set_active(True)),
             (2, "disk-sort-oldest", lambda: win.explorer.sort_dd.set_selected(1)),
             (2, "disk-top5", lambda: win.explorer.top_dd.set_selected(1)),

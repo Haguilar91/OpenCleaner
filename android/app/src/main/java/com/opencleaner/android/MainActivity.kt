@@ -54,17 +54,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppRoot() {
-    var granted by remember { mutableStateOf(Environment.isExternalStorageManager()) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { granted = Environment.isExternalStorageManager() }
+    val ctx = LocalContext.current
+    var granted by remember { mutableStateOf(Access.hasStorage(ctx)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { granted = Access.hasStorage(ctx) }
 
     if (!granted) {
-        PermissionScreen()
+        PermissionScreen(onGranted = { granted = Access.hasStorage(ctx) })
         return
     }
 
     val vm: CleanVm = viewModel()
     var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf(R.drawable.ic_clean to "Clean", R.drawable.ic_storage to "Storage", R.drawable.ic_apps to "Apps")
+
+    if (BuildConfig.IS_TV) {
+        TvRoot(vm, tab, { tab = it }, tabs)
+        return
+    }
 
     Scaffold(
         bottomBar = {
@@ -153,5 +159,35 @@ fun UpdateButton() {
     message?.let { m ->
         AlertDialog(onDismissRequest = { message = null }, text = { Text(m) },
             confirmButton = { TextButton(onClick = { message = null }) { Text("OK") } })
+    }
+}
+
+/** TV layout: a navigation rail on the left (easy with a remote) and the overscan-safe margins TVs need. */
+@Composable
+private fun TvRoot(vm: CleanVm, tab: Int, onTab: (Int) -> Unit, tabs: List<Pair<Int, String>>) {
+    Row(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp)) {
+        androidx.compose.material3.NavigationRail {
+            tabs.forEachIndexed { i, (icon, label) ->
+                androidx.compose.material3.NavigationRailItem(
+                    selected = tab == i,
+                    onClick = { onTab(i) },
+                    icon = { Ico(icon, size = 28) },
+                    label = { Text(label) },
+                    modifier = Modifier.focusRing(),
+                )
+            }
+        }
+        Column(Modifier.weight(1f).padding(start = 16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("OpenCleaner", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                UpdateButton()
+                Text(vm.free, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            when (tab) {
+                0 -> CleanScreen(vm)
+                1 -> StorageScreen(onChanged = { vm.refreshFree() })
+                else -> AppsScreen()
+            }
+        }
     }
 }

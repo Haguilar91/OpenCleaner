@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct OpenCleanerApp: App {
@@ -36,6 +37,7 @@ struct RootView: View {
                 AppsView(model: appsModel)
             }
         }
+        .onAppear { applyLaunchArguments() }
     }
 
     private var header: some View {
@@ -77,6 +79,31 @@ struct RootView: View {
         .padding(.trailing, 18)
         .padding(.vertical, 12)
         .background(.bar)
+    }
+
+    /// Launch options, used for screenshots: --tab 0|1|2, --root <folder>, --map
+    private func applyLaunchArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        func value(_ name: String) -> String? {
+            guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        if let t = value("--tab").flatMap(Int.init), (0...2).contains(t) { store.tab = t }
+        if let r = value("--root") { explorer.setRoot(URL(fileURLWithPath: r)) }
+        if args.contains("--map") { explorer.mapMode = true }
+        // --snapshot <file.png> [--snapshot-delay seconds]: save this window as an image, then quit.
+        // The app draws its own window, so no Screen Recording permission is needed.
+        if let file = value("--snapshot") {
+            let delay = value("--snapshot-delay").flatMap(Double.init) ?? 8
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard let window = NSApp.windows.first(where: { $0.isVisible }),
+                      let view = window.contentView?.superview ?? window.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: file))
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     private func refresh() {

@@ -198,7 +198,10 @@ def detect_distro(osrel=None, exists=os.path.exists, which=shutil.which):
         name = "Raspberry Pi OS (Debian)"
     tail = " · image-based" if immutable else (f" · {pm}" if pm else "")
     label = name + tail
-    short_name = " ".join(x for x in (kv.get("NAME", ""), kv.get("VERSION_ID", "")) if x) or name
+    version = kv.get("VERSION_ID", "")
+    if len(version) > 8:          # rolling releases / container images use build ids, not versions
+        version = ""
+    short_name = " ".join(x for x in (kv.get("NAME", ""), version) if x) or name
     if omarchy:
         short_name = "Omarchy"
     elif did == "raspbian":

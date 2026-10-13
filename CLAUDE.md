@@ -24,7 +24,7 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 | macOS | 1.2 builds and runs (preview, player and map tried by the user; Apps page rendered here with real apps); cleaning and uninstall flows not fully tested |
 | Windows WinForms | 1.2 compiles in the UTM VM (Windows 11 ARM64); the new preview, map, sort and Apps page have not been run |
 | Windows WinUI 3 | 1.2 compiles and the x64/arm64/x86 Inno Setup installers build in the VM; the new features have not been run. Needs `app.manifest` (PerMonitorV2 DPI + Win10 supportedOS) or it renders blurry and the mouse wheel does not scroll |
-| Android | 1.2 (versionCode 11) debug APK; preview, player and map tried on a Pixel; sort/Top and Apps sort are new |
+| Android | Two flavors: `phone` (minSdk 30, `com.opencleaner.android`) and `tv` (minSdk 28, `com.opencleaner.tv`, leanback launcher + banner, `IS_TV` BuildConfig). 1.3 phone APK: preview, player and map tried on a Pixel. TV APK driven with D-pad on the Google TV emulator (API 31): rail, focus ring, list/map/Apps, OK-menu on map blocks; Android 9 storage path untested (needs a real Fire OS 7 device) |
 | Linux binary | `build_release_docker.sh`: x86_64 + arm64 single files (~28 MB, Debian 12 base). Open the window on systems without GTK/Python (need the host's Wayland/X11/GL libs). Media playback inside the binary untested |
 
 Highest-value next steps: exercise the real cleaning flows on Windows (WinForms and WinUI) and
@@ -93,12 +93,19 @@ Windows already have them).
   Clean / Disk usage switch, free space), grouped rounded cards, bottom bar with the summary and a
   prominent Clean button. Selected tab lives in `CleanerStore.tab` (no `@State`). The window uses
   `.hiddenTitleBar`, so the header has 82pt of leading padding for the traffic-light buttons.
-  The Mac screenshots in `docs/screenshots/` predate this restyle.
+  Mac screenshots: `open -n macos/build/OpenCleaner.app --args --tab 0|1|2 [--root <folder>] [--map]
+  --snapshot <file.png> [--snapshot-delay s]` makes the app save its own window and quit (no Screen
+  Recording permission needed). Use a sample folder for Disk usage, not a real home folder.
 - Wine's list view does not draw groups and may not render some glyphs, so judge the look on real
   Windows, not Wine.
 - **Android**: since Android 11 an app cannot clear other apps' caches or read their private data.
   The Apps tab ranks apps by size and opens each app's settings page instead. The "All files access"
   and "Usage access" permissions are granted by the user in Settings.
+- **Android TV**: Compose gives no long-press for D-pad keys, so on TV a map block's OK opens an action
+  menu; use `Modifier.focusRing()` on clickable TV items; LazyColumn keyed items keep the old first item in
+  view after a re-sort, so the Storage list scrolls back to the top when its order changes. TVs often lack
+  the "All files access" / "Usage access" settings pages: `Access.kt` falls back to showing the adb command.
+  Emulator: `system-images;android-31;google-tv;arm64-v8a` (no ARM image below Android 12).
 - Android build recipe that worked: JDK 17, Gradle 8.7, AGP 8.5.2, Kotlin 2.0.20 (Compose compiler
   plugin), compileSdk/targetSdk 34, minSdk 30, Compose BOM 2024.09.03.
 - **Linux testing uses Docker** (`linux-cachyos/tests/`, see its README): `run_docker_tests.sh` runs the

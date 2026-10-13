@@ -16,6 +16,25 @@ android {
         versionName = "1.3"
     }
 
+    // Two APKs from one codebase: the phone app (Android 11+) and the TV app for Google TV / Android TV
+    // and Fire TV (Android 9+, remote-friendly layout, its own application id).
+    flavorDimensions += "device"
+    productFlavors {
+        create("phone") {
+            dimension = "device"
+            minSdk = 30
+            buildConfigField("boolean", "IS_TV", "false")
+            buildConfigField("String", "APK_SUFFIX", "\"-android.apk\"")
+        }
+        create("tv") {
+            dimension = "device"
+            applicationId = "com.opencleaner.tv"
+            minSdk = 28
+            buildConfigField("boolean", "IS_TV", "true")
+            buildConfigField("String", "APK_SUFFIX", "\"-androidtv.apk\"")
+        }
+    }
+
     buildTypes {
         release { isMinifyEnabled = false }
     }
@@ -24,7 +43,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 }
 
 dependencies {
