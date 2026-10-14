@@ -3,8 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/OpenCleaner"
+# one universal binary: Apple silicon and Intel Macs
+swift build -c release --arch arm64 --arch x86_64
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/OpenCleaner"
 
 APP=build/OpenCleaner.app
 rm -rf "$APP"

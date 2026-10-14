@@ -48,6 +48,6 @@ a newer one.
 
 ## Notes
 
-- The Mac app is ad-hoc signed and not notarized, as before, and built for Apple silicon only.
+- The Mac app is one universal binary (Apple silicon and Intel), ad-hoc signed and not notarized, as before.
 - The Windows installers and exes are unsigned, as before (SmartScreen warns).
 - Local builds still work exactly as before; the workflow only calls the same scripts.

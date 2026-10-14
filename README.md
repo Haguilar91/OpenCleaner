@@ -18,15 +18,16 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | `android/` | OpenCleaner for Android phones (Kotlin + Compose) and **for Android TV / Google TV / Fire TV** (same project, `tv` flavor, remote-friendly) | `gradle assemblePhoneDebug` / `gradle assembleTvDebug`, then install the APK |
 
 **En español:** OpenCleaner también está en español. Cada app usa el idioma del sistema, así que se
-muestra en español sin configurar nada. Hay un [video en español](docs/videos/opencleaner-1.3-es.mp4).
+muestra en español sin configurar nada. Hay un [video en español](docs/videos/features-es.mp4) y guías de instalación en la [página del proyecto](https://haguilar91.github.io/OpenCleaner/?lang=es).
 
 ## Video
 
-A one-minute tour of OpenCleaner 1.3 (click to play):
+A one-minute tour of OpenCleaner (click to play). Install guides with a short video for each system
+are on the [project page](https://haguilar91.github.io/OpenCleaner/).
 
 <p>
-  <a href="docs/videos/opencleaner-1.3-en.mp4"><img src="docs/videos/opencleaner-1.3-en.jpg" width="49%" alt="OpenCleaner 1.3 video, English"></a>
-  <a href="docs/videos/opencleaner-1.3-es.mp4"><img src="docs/videos/opencleaner-1.3-es.jpg" width="49%" alt="Video de OpenCleaner 1.3, en español"></a>
+  <a href="docs/videos/features-en.mp4"><img src="docs/videos/features-en.jpg" width="49%" alt="OpenCleaner video, English"></a>
+  <a href="docs/videos/features-es.mp4"><img src="docs/videos/features-es.jpg" width="49%" alt="Video de OpenCleaner, en español"></a>
 </p>
 
 English (left) · Español (right)
