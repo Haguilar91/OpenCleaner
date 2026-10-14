@@ -8,13 +8,13 @@ static class Treemap
     /// <summary>Legend order; also the order used by the "File type" sort.</summary>
     public static readonly (string Label, Color Color)[] Kinds =
     {
-        ("Folders", Color.FromArgb(255, 37, 99, 235)),
-        ("Images", Color.FromArgb(255, 46, 158, 91)),
-        ("Video", Color.FromArgb(255, 140, 84, 204)),
-        ("Audio", Color.FromArgb(255, 224, 133, 36)),
-        ("Documents", Color.FromArgb(255, 26, 153, 158)),
-        ("Archives", Color.FromArgb(255, 199, 69, 69)),
-        ("Other", Color.FromArgb(255, 107, 117, 138)),
+        (L.T("Folders"), Color.FromArgb(255, 37, 99, 235)),
+        (L.T("Images"), Color.FromArgb(255, 46, 158, 91)),
+        (L.T("Video"), Color.FromArgb(255, 140, 84, 204)),
+        (L.T("Audio"), Color.FromArgb(255, 224, 133, 36)),
+        (L.T("Documents"), Color.FromArgb(255, 26, 153, 158)),
+        (L.T("Archives"), Color.FromArgb(255, 199, 69, 69)),
+        (L.T("Other"), Color.FromArgb(255, 107, 117, 138)),
     };
 
     private static readonly string[][] KindExt =

@@ -21,6 +21,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="OpenCleaner"
+        android:localeConfig="@xml/locales_config"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"

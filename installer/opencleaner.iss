@@ -1,9 +1,9 @@
 ; Inno Setup script for the OpenCleaner (WinUI 3) installer.
 ; Build with installer\build_installer.bat, which publishes the app first.
-; Manual build:  iscc /DArch=x64 /DAppVersion=1.3 opencleaner.iss   (Arch: x64, arm64 or x86)
+; Manual build:  iscc /DArch=x64 /DAppVersion=1.4 opencleaner.iss   (Arch: x64, arm64 or x86)
 
 #ifndef AppVersion
-  #define AppVersion "1.3"
+  #define AppVersion "1.4"
 #endif
 #ifndef Arch
   #define Arch "x64"

@@ -1,6 +1,6 @@
 @echo off
 rem Builds the WinUI app and wraps it in dist\OpenCleaner-Setup-<arch>.exe with Inno Setup.
-rem   build_installer.bat [x64|arm64|x86] [version]      (default: this PC's architecture, 1.3)
+rem   build_installer.bat [x64|arm64|x86] [version]      (default: this PC's architecture, 1.4)
 rem Needs the .NET 8 SDK and Inno Setup 6:
 rem   winget install Microsoft.DotNet.SDK.8
 rem   winget install JRSoftware.InnoSetup
@@ -17,7 +17,7 @@ if /i not "%ARCH%"=="x64" if /i not "%ARCH%"=="arm64" if /i not "%ARCH%"=="x86" 
   exit /b 1
 )
 set VERSION=%~2
-if "%VERSION%"=="" set VERSION=1.3
+if "%VERSION%"=="" set VERSION=1.4
 
 rem ISCC may be set beforehand; otherwise look in the usual places, including a per-user
 rem install under any profile (builds started remotely run as a different account)

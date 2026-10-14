@@ -43,3 +43,9 @@ echo "$MATRIX" | xargs -P 3 -L 1 sh -c '
 '
 echo "tests took $(( $(date +%s) - start ))s"
 grep -h "^FAIL" out/*.log 2>/dev/null | sed 's/^/  /'
+# exit status for CI: every picked distro must report ALL PASSED
+status=0
+for name in $(echo "$MATRIX" | cut -d' ' -f1); do
+  grep -q "^RESULT: ALL PASSED" "out/$name.log" 2>/dev/null || status=1
+done
+exit $status

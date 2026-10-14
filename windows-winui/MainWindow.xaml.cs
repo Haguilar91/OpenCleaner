@@ -29,7 +29,7 @@ public sealed partial class MainWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        updateBtn.Content = "Check for updates";
+        updateBtn.Content = L.T("Check for updates");
         updateBtn.Click += async (_, _) => { if (pendingUpdate == null) await CheckUpdatesAsync(true); else await OfferUpdateAsync(); };
         Grid.SetColumn(updateBtn, 1);
         Grid.SetColumn(freeText, 2);
@@ -50,10 +50,10 @@ public sealed partial class MainWindow : Window
             OpenPaneLength = 190,
             Content = host,
         };
-        var cleanItem = new NavigationViewItem { Content = "Clean", Icon = new SymbolIcon(Symbol.Delete), Tag = "clean" };
-        var diskItem = new NavigationViewItem { Content = "Disk usage", Icon = new FontIcon { Glyph = "" }, Tag = "disk" };
+        var cleanItem = new NavigationViewItem { Content = L.T("Clean"), Icon = new SymbolIcon(Symbol.Delete), Tag = "clean" };
+        var diskItem = new NavigationViewItem { Content = L.T("Disk usage"), Icon = new FontIcon { Glyph = "" }, Tag = "disk" };
         nav.MenuItems.Add(cleanItem);
-        var appsItem = new NavigationViewItem { Content = "Apps", Icon = new FontIcon { Glyph = "\uE71D" }, Tag = "apps" };
+        var appsItem = new NavigationViewItem { Content = L.T("Apps"), Icon = new FontIcon { Glyph = "\uE71D" }, Tag = "apps" };
         nav.MenuItems.Add(diskItem);
         nav.MenuItems.Add(appsItem);
         nav.SelectionChanged += (s, e) =>
@@ -94,14 +94,14 @@ public sealed partial class MainWindow : Window
         if (r != null && Updater.IsNewer(r.Version, Updater.CurrentVersion))
         {
             pendingUpdate = r;
-            updateBtn.Content = "Update to " + r.Version;
+            updateBtn.Content = L.T("Update to {0}", r.Version);
             updateBtn.Style = Ui.Sty("AccentButtonStyle");
             if (manual) await OfferUpdateAsync();
         }
         else if (manual)
         {
-            await Ui.Message(Root.XamlRoot, "OpenCleaner", error != null ? "Could not check for updates: " + error
-                : $"OpenCleaner {Updater.CurrentVersion} is up to date.");
+            await Ui.Message(Root.XamlRoot, "OpenCleaner", error != null ? L.T("Could not check for updates: {0}", error)
+                : L.T("OpenCleaner {0} is up to date.", Updater.CurrentVersion));
         }
     }
 
@@ -111,17 +111,18 @@ public sealed partial class MainWindow : Window
     {
         var r = pendingUpdate;
         string notes = r.Notes.Length > 600 ? r.Notes[..600] + "..." : r.Notes;
-        if (!await Ui.Confirm(Root.XamlRoot, $"Update to OpenCleaner {r.Version}?",
-                $"You have {Updater.CurrentVersion}. The installer is downloaded from GitHub, checked against the release "
-                + "checksums, and run; OpenCleaner restarts when it is done.\n\n" + notes + "\n\nRelease page: " + r.Page,
-                "Update and restart")) return;
+        if (!await Ui.Confirm(Root.XamlRoot, L.T("Update to OpenCleaner {0}?", r.Version),
+                L.T("You have {0}. The installer is downloaded from GitHub, checked against the release "
+                + "checksums, and run; OpenCleaner restarts when it is done.", Updater.CurrentVersion) + "\n\n" + notes
+                + "\n\n" + L.T("Release page: {0}", r.Page),
+                L.T("Update and restart"))) return;
         string arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
         {
             System.Runtime.InteropServices.Architecture.Arm64 => "arm64",
             System.Runtime.InteropServices.Architecture.X86 => "x86",
             _ => "x64",
         };
-        updateBtn.Content = "Updating...";
+        updateBtn.Content = L.T("Updating...");
         updateBtn.IsEnabled = false;
         try
         {
@@ -131,9 +132,9 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            updateBtn.Content = "Update to " + r.Version;
+            updateBtn.Content = L.T("Update to {0}", r.Version);
             updateBtn.IsEnabled = true;
-            await Ui.Message(Root.XamlRoot, "Update failed", ex.Message + "\n\n" + r.Page);
+            await Ui.Message(Root.XamlRoot, L.T("Update failed"), ex.Message + "\n\n" + r.Page);
         }
     }
 
@@ -143,7 +144,7 @@ public sealed partial class MainWindow : Window
         {
             var d = new DriveInfo(Util.SystemDrive());
             double used = 100.0 * (d.TotalSize - d.AvailableFreeSpace) / d.TotalSize;
-            freeText.Text = $"{Util.SystemDrive()}  {Util.Fmt(d.AvailableFreeSpace)} free  |  {used:0}% used";
+            freeText.Text = Util.SystemDrive() + "  " + L.T("{0} free  |  {1}% used", Util.Fmt(d.AvailableFreeSpace), used.ToString("0"));
         }
         catch { }
     }

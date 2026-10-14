@@ -34,7 +34,7 @@ static class Ui
 
     public static async Task Message(XamlRoot root, string title, string text)
     {
-        var dlg = new ContentDialog { Title = title, Content = Body(text), CloseButtonText = "OK", XamlRoot = root };
+        var dlg = new ContentDialog { Title = title, Content = Body(text), CloseButtonText = L.T("OK"), XamlRoot = root };
         await dlg.ShowAsync();
     }
 
@@ -45,7 +45,7 @@ static class Ui
             Title = title,
             Content = Body(text),
             PrimaryButtonText = yes,
-            CloseButtonText = "Cancel",
+            CloseButtonText = L.T("Cancel"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = root,
         };

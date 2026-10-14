@@ -37,7 +37,7 @@ public sealed class DiskView : UserControl
         Foreground = Ui.Res("TextFillColorSecondaryBrush"),
     };
     private readonly Button upBtn = new() { Content = new FontIcon { Glyph = "" } };
-    private readonly ComboBox driveBox = new() { MinWidth = 90, PlaceholderText = "Drive" };
+    private readonly ComboBox driveBox = new() { MinWidth = 90, PlaceholderText = L.T("Drive") };
     private readonly Dictionary<string, Row> byPath = new();
     private readonly List<Row> rows = new();
     private string root = Environment.GetEnvironmentVariable("USERPROFILE");
@@ -73,7 +73,7 @@ public sealed class DiskView : UserControl
     {
         this.freeChanged = freeChanged;
 
-        var homeBtn = new Button { Content = "My folder" };
+        var homeBtn = new Button { Content = L.T("My folder") };
         homeBtn.Click += (_, _) =>
         {
             driveBox.SelectedIndex = -1;
@@ -104,16 +104,16 @@ public sealed class DiskView : UserControl
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        foreach (string n in SortNames) sortBox.Items.Add(n);
+        foreach (string n in SortNames) sortBox.Items.Add(L.T(n));
         sortBox.SelectedIndex = 0;
         sortBox.SelectionChanged += (_, _) => { sortMode = Math.Max(sortBox.SelectedIndex, 0); Resort(); };
-        topBox.Items.Add("All");
-        for (int k = 1; k < TopChoices.Length; k++) topBox.Items.Add("Top " + TopChoices[k]);
+        topBox.Items.Add(L.T("All"));
+        for (int k = 1; k < TopChoices.Length; k++) topBox.Items.Add(L.T("Top {0}", TopChoices[k]));
         topBox.SelectedIndex = 0;
         topBox.SelectionChanged += (_, _) => { topN = TopChoices[Math.Max(topBox.SelectedIndex, 0)]; Resort(); };
-        ToolTipService.SetToolTip(sortBox, "Sort by size, age or type");
-        ToolTipService.SetToolTip(topBox, "Show only the first items of the sort");
-        ToolTipService.SetToolTip(mapBtn, "Disk map");
+        ToolTipService.SetToolTip(sortBox, L.T("Sort by size, age or type"));
+        ToolTipService.SetToolTip(topBox, L.T("Show only the first items of the sort"));
+        ToolTipService.SetToolTip(mapBtn, L.T("Disk map"));
         mapBtn.Click += (_, _) =>
         {
             mapMode = mapBtn.IsChecked == true;
@@ -124,14 +124,14 @@ public sealed class DiskView : UserControl
         Grid.SetColumn(sortBox, 4);
         Grid.SetColumn(topBox, 5);
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        foreach (string m in DeleteModes) deleteBox.Items.Add(m);
+        foreach (string m in DeleteModes) deleteBox.Items.Add(L.T(m));
         deleteBox.SelectedIndex = Settings.Get("deleteMode", "trash") == "permanent" ? 1 : 0;
         deleteBox.SelectionChanged += (_, _) =>
         {
             Settings.Set("deleteMode", Permanent ? "permanent" : "trash");
             UpdateSelBar();
         };
-        ToolTipService.SetToolTip(deleteBox, "What Delete does here (uninstalling is always permanent)");
+        ToolTipService.SetToolTip(deleteBox, L.T("What Delete does here (uninstalling is always permanent)"));
         Grid.SetColumn(deleteBox, 7);
         top.Children.Add(deleteBox);
         Grid.SetColumn(mapBtn, 6);
@@ -185,7 +185,7 @@ public sealed class DiskView : UserControl
         selBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         selBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         selBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var clearBtn = new HyperlinkButton { Content = "Clear" };
+        var clearBtn = new HyperlinkButton { Content = L.T("Clear") };
         clearBtn.Click += (_, _) => { selected.Clear(); SyncChecks(); UpdateSelBar(); DrawMap(); };
         delSelBtn.Style = Ui.Sty("AccentButtonStyle");
         delSelBtn.Click += async (_, _) => await DeleteAsync(Ordered().Select(r => r.FullPath).Where(selected.Contains).ToList());
@@ -248,7 +248,7 @@ public sealed class DiskView : UserControl
             list.Children.Add(r.View);
         }
         Resort();
-        status.Text = entries.Count == 0 ? "Empty folder" : "Measuring 0% (0 of " + entries.Count + " items)";
+        status.Text = entries.Count == 0 ? L.T("Empty folder") : L.T("Measuring {0}% ({1} of {2} items)", 0, 0, entries.Count);
         if (entries.Count == 0) return;
 
         var dq = DispatcherQueue;
@@ -284,7 +284,7 @@ public sealed class DiskView : UserControl
 
         var icon = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         r.Check = new CheckBox { MinWidth = 32 };
-        ToolTipService.SetToolTip(r.Check, "Select");
+        ToolTipService.SetToolTip(r.Check, L.T("Select"));
         r.Check.Click += (_, _) => Toggle(fullPath);
         icon.Children.Add(r.Check);
         icon.Children.Add(new FontIcon { Glyph = dir ? "" : "", FontSize = 16 });
@@ -299,7 +299,7 @@ public sealed class DiskView : UserControl
         else
         {
             var link = new HyperlinkButton { Content = name, Padding = new Thickness(0) };
-            ToolTipService.SetToolTip(link, "Preview");
+            ToolTipService.SetToolTip(link, L.T("Preview"));
             link.Click += async (_, _) =>
             {
                 if (await Preview.Show(XamlRoot, fullPath, true)) await DeleteAsync(new List<string> { fullPath });
@@ -321,7 +321,7 @@ public sealed class DiskView : UserControl
             Content = new FontIcon { Glyph = "", FontSize = 14 },
             Padding = new Thickness(8, 4, 8, 4),
         };
-        ToolTipService.SetToolTip(del, "Delete");
+        ToolTipService.SetToolTip(del, L.T("Delete"));
         del.Click += async (_, _) => await DeleteAsync(new List<string> { fullPath });
 
         Grid.SetColumn(label, 1);
@@ -348,7 +348,7 @@ public sealed class DiskView : UserControl
         measured++;
         if (pending == 0 || (DateTime.Now - lastSort).TotalMilliseconds > 400) Resort();
         int pct = itemCount == 0 ? 100 : measured * 100 / itemCount;
-        status.Text = (pending > 0 ? $"Measuring {pct}% ({measured} of {itemCount} items)  |  " : "") + "Total " + Util.Fmt(total);
+        status.Text = (pending > 0 ? L.T("Measuring {0}% ({1} of {2} items)", pct, measured, itemCount) + "  |  " : "") + L.T("Total {0}", Util.Fmt(total));
         progress.Maximum = Math.Max(itemCount, 1);
         progress.Value = measured;
         progress.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -403,7 +403,7 @@ public sealed class DiskView : UserControl
                 text.Children.Add(new TextBlock { Text = Util.Fmt(r.Size), FontSize = 11, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), Opacity = 0.85 });
                 block.Child = text;
             }
-            ToolTipService.SetToolTip(block, Path.GetFileName(r.FullPath) + "  |  " + Util.Fmt(r.Size) + "  |  right-click to select");
+            ToolTipService.SetToolTip(block, Path.GetFileName(r.FullPath) + "  |  " + Util.Fmt(r.Size) + "  |  " + L.T("right-click to select"));
             string toggled = r.FullPath;
             block.RightTapped += (_, e) => { Toggle(toggled); e.Handled = true; };
             string path = r.FullPath;
@@ -450,8 +450,8 @@ public sealed class DiskView : UserControl
     private void UpdateSelBar()
     {
         long size = rows.Where(r => selected.Contains(r.FullPath)).Sum(r => Math.Max(r.Size, 0));
-        selText.Text = $"{selected.Count} selected  |  {Util.Fmt(size)}";
-        delSelBtn.Content = Permanent ? "Delete selected permanently" : "Move selected to Recycle Bin";
+        selText.Text = L.T("{0} selected  |  {1}", selected.Count, Util.Fmt(size));
+        delSelBtn.Content = Permanent ? L.T("Delete selected permanently") : L.T("Move selected to Recycle Bin");
         selBar.Visibility = selected.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -460,14 +460,14 @@ public sealed class DiskView : UserControl
     {
         string full = Path.GetFullPath(path).TrimEnd('\\');
         if (string.Equals(Path.GetPathRoot(path)?.TrimEnd('\\'), full, StringComparison.OrdinalIgnoreCase))
-            return "a whole drive";
+            return L.T("a whole drive");
         foreach (var folder in new[] { Environment.SpecialFolder.Windows, Environment.SpecialFolder.ProgramFiles,
                                        Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.CommonApplicationData })
         {
             string root = Environment.GetFolderPath(folder).TrimEnd('\\');
             if (root.Length > 3 && (full.Equals(root, StringComparison.OrdinalIgnoreCase)
                 || full.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)))
-                return "a system folder (use Move to Recycle Bin, or uninstall the program)";
+                return L.T("a system folder (use Move to Recycle Bin, or uninstall the program)");
         }
         return null;
     }
@@ -477,11 +477,11 @@ public sealed class DiskView : UserControl
     {
         if (paths.Count == 0) return;
         bool permanent = Permanent;
-        string what = paths.Count == 1 ? $"\"{Path.GetFileName(paths[0])}\"" : $"{paths.Count} items";
-        string body = (permanent ? "This cannot be undone: nothing goes to the Recycle Bin." : "You can restore them from the Recycle Bin.")
-                      + "\n\n" + string.Join("\n", paths.Take(12)) + (paths.Count > 12 ? $"\n...and {paths.Count - 12} more" : "");
-        if (!await Ui.Confirm(XamlRoot, permanent ? $"Delete {what} permanently?" : $"Move {what} to the Recycle Bin?",
-                              body, DeleteModes[permanent ? 1 : 0])) return;
+        string what = paths.Count == 1 ? $"\"{Path.GetFileName(paths[0])}\"" : L.T("{0} items", paths.Count);
+        string body = (permanent ? L.T("This cannot be undone: nothing goes to the Recycle Bin.") : L.T("You can restore them from the Recycle Bin."))
+                      + "\n\n" + string.Join("\n", paths.Take(12)) + (paths.Count > 12 ? "\n" + L.T("...and {0} more", paths.Count - 12) : "");
+        if (!await Ui.Confirm(XamlRoot, permanent ? L.T("Delete {0} permanently?", what) : L.T("Move {0} to the Recycle Bin?", what),
+                              body, L.T(DeleteModes[permanent ? 1 : 0]))) return;
         var failed = new List<string>();
         await Task.Run(() =>
         {
@@ -491,7 +491,7 @@ public sealed class DiskView : UserControl
                 {
                     if (!permanent) { Util.SendToRecycleBin(p); continue; }
                     string block = PermanentBlock(p);
-                    if (block != null) throw new InvalidOperationException("refused: " + block);
+                    if (block != null) throw new InvalidOperationException(L.T("refused: {0}", block));
                     if (Directory.Exists(p)) Directory.Delete(p, true); else File.Delete(p);
                 }
                 catch (Exception ex)
@@ -500,7 +500,7 @@ public sealed class DiskView : UserControl
                 }
             }
         });
-        if (failed.Count > 0) await Ui.Message(XamlRoot, "Some items could not be deleted", string.Join("\n", failed.Take(12)));
+        if (failed.Count > 0) await Ui.Message(XamlRoot, L.T("Some items could not be deleted"), string.Join("\n", failed.Take(12)));
         freeChanged();
         Load(current);
     }

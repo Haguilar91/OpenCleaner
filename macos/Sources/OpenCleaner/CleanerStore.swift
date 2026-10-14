@@ -4,7 +4,7 @@ import SwiftUI
 final class CleanerStore: ObservableObject {
     @Published var items: [CleanItem] = []
     @Published var busy = false
-    @Published var busyText = "Scanning…"
+    @Published var busyText = tr("Scanning…")
     @Published var freeText = ""
     @Published var message: String?
     @Published var confirming = false
@@ -24,10 +24,10 @@ final class CleanerStore: ObservableObject {
                 update = r
                 if manual { offerUpdate = true }
             } else if manual {
-                message = "OpenCleaner \(Updater.currentVersion) is up to date."
+                message = tr("OpenCleaner {0} is up to date.", Updater.currentVersion)
             }
         } catch {
-            if manual { message = "Could not check for updates: \(error.localizedDescription)" }
+            if manual { message = tr("Could not check for updates: {0}", error.localizedDescription) }
         }
     }
 
@@ -36,7 +36,7 @@ final class CleanerStore: ObservableObject {
         updating = true
         do { try await Updater.install(r) } catch {
             updating = false
-            message = "Update failed: \(error.localizedDescription)\n\nYou can download it from \(r.page.absoluteString)"
+            message = tr("Update failed: {0}", error.localizedDescription) + "\n\n" + tr("You can download it from {0}", r.page.absoluteString)
         }
     }
 
@@ -44,7 +44,7 @@ final class CleanerStore: ObservableObject {
     func updateFree() -> Int64 {
         guard let s = FS.freeSpace() else { return 0 }
         let pct = Int((Double(s.total - s.free) / Double(max(s.total, 1)) * 100).rounded())
-        freeText = "\(fmt(s.free)) free · \(pct)% used"
+        freeText = tr("{0} free · {1}% used", fmt(s.free), pct)
         return s.free
     }
 
@@ -56,7 +56,7 @@ final class CleanerStore: ObservableObject {
 
     func scan() async {
         guard !busy else { return }
-        busy = true; busyText = "Scanning…"
+        busy = true; busyText = tr("Scanning…")
         items = await Task.detached(priority: .userInitiated) { Scanners.runAll() }.value
         busy = false
         updateFree()
@@ -65,7 +65,7 @@ final class CleanerStore: ObservableObject {
     func cleanSelected() async {
         let todo = selected
         guard !todo.isEmpty, !busy else { return }
-        busy = true; busyText = "Cleaning…"
+        busy = true; busyText = tr("Cleaning…")
         let before = updateFree()
         let failures: [String] = await Task.detached(priority: .userInitiated) {
             todo.compactMap { item in Scanners.clean(item).map { "\(item.title): \($0.prefix(200))" } }
@@ -73,9 +73,9 @@ final class CleanerStore: ObservableObject {
         busy = false
         let freed = updateFree() - before
         if failures.isEmpty {
-            message = "Cleaning finished" + (freed > 0 ? " · freed \(fmt(freed))" : "")
+            message = tr("Cleaning finished") + (freed > 0 ? " · " + tr("freed {0}", fmt(freed)) : "")
         } else {
-            message = "Some items failed:\n" + failures.joined(separator: "\n")
+            message = tr("Some items failed:") + "\n" + failures.joined(separator: "\n")
         }
         await scan()
     }

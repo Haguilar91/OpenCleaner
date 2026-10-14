@@ -29,7 +29,7 @@ class App(oc.App):
         super().do_activate()
         state["win"] = self.props.active_window
         win = state["win"]
-        if os.environ.get("TAG") == "docs":
+        if os.environ.get("TAG", "").startswith("docs"):
             win.set_default_size(1180, 820)     # docs screenshots: wide enough for every label
         steps = [
             (8, "clean", lambda: None),

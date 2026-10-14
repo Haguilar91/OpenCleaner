@@ -59,13 +59,13 @@ enum Kind: CaseIterable {
 
     var label: String {
         switch self {
-        case .folder: "Folders"
-        case .image: "Images"
-        case .video: "Video"
-        case .audio: "Audio"
-        case .document: "Documents"
-        case .archive: "Archives"
-        case .other: "Other"
+        case .folder: tr("Folders")
+        case .image: tr("Images")
+        case .video: tr("Video")
+        case .audio: tr("Audio")
+        case .document: tr("Documents")
+        case .archive: tr("Archives")
+        case .other: tr("Other")
         }
     }
 
@@ -114,7 +114,7 @@ struct MapView: View {
                         if i < rects.count { block(e, rects[i]) }
                     }
                     if shown.isEmpty {
-                        Text(model.measuring ? "Measuring…" : "Nothing to show")
+                        Text(model.measuring ? tr("Measuring…") : tr("Nothing to show"))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
@@ -160,12 +160,12 @@ struct MapView: View {
             .frame(width: w, height: h)
         }
         .buttonStyle(.plain)
-        .help("\(e.name) \u{2014} \(fmt(e.size ?? 0)). Right-click to select or delete.")
+        .help("\(e.name) \u{2014} \(fmt(e.size ?? 0)). " + tr("Right-click to select or delete."))
         .contextMenu {
-            Button(e.isDir ? "Open" : "Preview") { open(e) }
-            Button(picked ? "Deselect" : "Select") { model.toggleSelected(e.id) }
+            Button(e.isDir ? tr("Open") : tr("Preview")) { open(e) }
+            Button(picked ? tr("Deselect") : tr("Select")) { model.toggleSelected(e.id) }
             Divider()
-            Button(model.deleteMode.rawValue + "\u{2026}", role: .destructive) { model.pendingDelete = [e.id] }
+            Button(model.deleteMode.label + "\u{2026}", role: .destructive) { model.pendingDelete = [e.id] }
         }
         .offset(x: inner.minX, y: inner.minY)
     }

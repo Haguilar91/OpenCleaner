@@ -59,9 +59,9 @@ object Updater {
     fun download(ctx: Context, r: Release): File {
         // phone and TV builds are separate APKs: pick ours by name ("…-android.apk" / "…-androidtv.apk")
         val name = r.assets.keys.firstOrNull { it.endsWith(APK_SUFFIX) }
-            ?: throw IllegalStateException("This release has no Android download.")
+            ?: throw IllegalStateException(tr("This release has no Android download."))
         val sumsUrl = r.assets["SHA256SUMS.txt"]
-            ?: throw IllegalStateException("This release has no checksums, so it was not installed.")
+            ?: throw IllegalStateException(tr("This release has no checksums, so it was not installed."))
         val sums = get(sumsUrl).inputStream.bufferedReader().use { it.readText() }
         val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
@@ -79,7 +79,7 @@ object Updater {
         val hex = md.digest().joinToString("") { "%02x".format(it) }
         if (sums.lines().none { it.startsWith(hex) && it.endsWith(name) }) {
             apk.delete()
-            throw IllegalStateException("The download did not match the release checksum, so it was not installed.")
+            throw IllegalStateException(tr("The download did not match the release checksum, so it was not installed."))
         }
         return apk
     }

@@ -3,7 +3,7 @@ import Foundation
 let home = NSHomeDirectory()
 
 func fmt(_ bytes: Int64?) -> String {
-    guard let bytes else { return "size unknown" }
+    guard let bytes else { return tr("size unknown") }
     return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
 }
 
@@ -69,7 +69,7 @@ enum FS {
         let p = url.standardizedFileURL.path
         guard p.hasPrefix(home + "/"), p != home else {
             throw NSError(domain: "OpenCleaner", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Refusing to delete outside home: \(p)"])
+                          userInfo: [NSLocalizedDescriptionKey: tr("Refusing to delete outside home: {0}", p)])
         }
         try FileManager.default.removeItem(at: url)   // removes a symlink itself, not its target
     }

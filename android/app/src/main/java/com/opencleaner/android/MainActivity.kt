@@ -65,7 +65,7 @@ fun AppRoot() {
 
     val vm: CleanVm = viewModel()
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf(R.drawable.ic_clean to "Clean", R.drawable.ic_storage to "Storage", R.drawable.ic_apps to "Apps")
+    val tabs = listOf(R.drawable.ic_clean to tr("Clean"), R.drawable.ic_storage to tr("Storage"), R.drawable.ic_apps to tr("Apps"))
 
     if (BuildConfig.IS_TV) {
         TvRoot(vm, tab, { tab = it }, tabs)
@@ -117,26 +117,26 @@ fun UpdateButton() {
         try {
             val r = withContext(Dispatchers.IO) { Updater.latest() }
             if (Updater.isNewer(r.version, current)) { release = r; if (manual) ask = true }
-            else if (manual) message = "OpenCleaner $current is up to date."
+            else if (manual) message = tr("OpenCleaner {0} is up to date.", current)
         } catch (e: Exception) {
-            if (manual) message = "Could not check for updates: ${e.message}"
+            if (manual) message = tr("Could not check for updates: {0}", e.message)
         }
     }
     LaunchedEffect(Unit) { check(false) }
 
     val r = release
     if (r != null) {
-        TextButton(onClick = { ask = true }, enabled = !busy) { Text(if (busy) "Updating…" else "Update to ${r.version}") }
+        TextButton(onClick = { ask = true }, enabled = !busy) { Text(if (busy) tr("Updating…") else tr("Update to {0}", r.version)) }
     } else {
-        IconButton(onClick = { check(true) }) { Ico(R.drawable.ic_update, "Check for updates ($current)") }
+        IconButton(onClick = { check(true) }) { Ico(R.drawable.ic_update, tr("Check for updates ({0})", current)) }
     }
     if (ask && r != null) {
         AlertDialog(
             onDismissRequest = { ask = false },
-            title = { Text("Update to OpenCleaner ${r.version}?") },
+            title = { Text(tr("Update to OpenCleaner {0}?", r.version)) },
             text = {
-                Text("You have $current. The update is downloaded from GitHub and checked against the release " +
-                    "checksums; Android then asks you to confirm the install.\n\n" + r.notes.take(500),
+                Text(tr("You have {0}. The update is downloaded from GitHub and checked against the release " +
+                    "checksums; Android then asks you to confirm the install.", current) + "\n\n" + r.notes.take(500),
                     modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()))
             },
             confirmButton = {
@@ -147,18 +147,18 @@ fun UpdateButton() {
                             val apk = withContext(Dispatchers.IO) { Updater.download(ctx, r) }
                             Updater.install(ctx, apk)
                         } catch (e: Exception) {
-                            message = "Update failed: ${e.message}\n\n${r.page}"
+                            message = tr("Update failed: {0}", e.message) + "\n\n" + r.page
                         }
                         busy = false
                     }
-                }) { Text("Update") }
+                }) { Text(tr("Update")) }
             },
-            dismissButton = { TextButton(onClick = { ask = false }) { Text("Later") } },
+            dismissButton = { TextButton(onClick = { ask = false }) { Text(tr("Later")) } },
         )
     }
     message?.let { m ->
         AlertDialog(onDismissRequest = { message = null }, text = { Text(m) },
-            confirmButton = { TextButton(onClick = { message = null }) { Text("OK") } })
+            confirmButton = { TextButton(onClick = { message = null }) { Text(tr("OK")) } })
     }
 }
 

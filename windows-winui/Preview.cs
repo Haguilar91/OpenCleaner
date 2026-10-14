@@ -95,7 +95,7 @@ static class Preview
         }
         return new TextBlock
         {
-            Text = "No preview for this file type. Use Open to view it in another app.",
+            Text = L.T("No preview for this file type. Use Open to view it in another app."),
             Foreground = Ui.Res("TextFillColorSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -106,7 +106,7 @@ static class Preview
         try
         {
             var fi = new FileInfo(path);
-            return $"{Util.Fmt(fi.Length)}  |  {(fi.Extension.Length > 0 ? fi.Extension : "file")}\n"
+            return $"{Util.Fmt(fi.Length)}  |  {(fi.Extension.Length > 0 ? fi.Extension : L.T("file"))}\n"
                  + $"{fi.LastWriteTime:g}\n{fi.DirectoryName}";
         }
         catch (Exception)
@@ -134,13 +134,13 @@ static class Preview
         {
             Title = Path.GetFileName(path),
             Content = body,
-            SecondaryButtonText = "Open",
-            CloseButtonText = "Close",
+            SecondaryButtonText = L.T("Open"),
+            CloseButtonText = L.T("Close"),
             XamlRoot = root,
         };
         if (canTrash)
         {
-            dlg.PrimaryButtonText = "Move to Recycle Bin";
+            dlg.PrimaryButtonText = L.T("Move to Recycle Bin");
         }
         dlg.Resources["ContentDialogMaxWidth"] = 900.0;   // wider than the default so media and images are bigger
         dlg.Closed += (_, _) =>
@@ -153,7 +153,7 @@ static class Preview
         };
         // Open and Show in folder keep the dialog up so the user can still decide
         dlg.SecondaryButtonClick += (_, a) => { a.Cancel = true; Launch(path); };
-        var reveal = new HyperlinkButton { Content = "Show in folder", Padding = new Thickness(0) };
+        var reveal = new HyperlinkButton { Content = L.T("Show in folder"), Padding = new Thickness(0) };
         reveal.Click += (_, _) => Launch("explorer.exe", $"/select,\"{path}\"");
         body.Children.Add(reveal);
         return await dlg.ShowAsync() == ContentDialogResult.Primary;
@@ -165,7 +165,7 @@ static class Preview
         while (true)
         {
             string chosen = null;
-            var dlg = new ContentDialog { Title = item.Title, CloseButtonText = "Close", XamlRoot = root };
+            var dlg = new ContentDialog { Title = item.Title, CloseButtonText = L.T("Close"), XamlRoot = root };
             var list = new ListView { MaxHeight = 360, SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
             int shown = Math.Min(item.Paths.Count, 200);
             for (int i = 0; i < shown; i++)
@@ -180,7 +180,7 @@ static class Preview
                 var name = new TextBlock { Text = Path.GetFileName(p), TextTrimming = TextTrimming.CharacterEllipsis };
                 var size = new TextBlock
                 {
-                    Text = dir ? "folder" : Util.Fmt(len),
+                    Text = dir ? L.T("folder") : Util.Fmt(len),
                     Foreground = Ui.Res("TextFillColorSecondaryBrush"),
                 };
                 Grid.SetColumn(size, 1);
@@ -189,7 +189,7 @@ static class Preview
                 list.Items.Add(row);
             }
             if (item.Paths.Count > shown)
-                list.Items.Add(new TextBlock { Text = $"...and {item.Paths.Count - shown} more" });
+                list.Items.Add(new TextBlock { Text = L.T("...and {0} more", item.Paths.Count - shown) });
             list.ItemClick += (_, e) =>
             {
                 if (e.ClickedItem is Grid { Tag: string p })
@@ -201,7 +201,7 @@ static class Preview
             var body = new StackPanel { Spacing = 8 };
             body.Children.Add(new TextBlock
             {
-                Text = "Click a file to preview it.",
+                Text = L.T("Click a file to preview it."),
                 Foreground = Ui.Res("TextFillColorSecondaryBrush"),
             });
             body.Children.Add(list);

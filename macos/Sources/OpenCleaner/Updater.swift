@@ -42,7 +42,7 @@ enum Updater {
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = json["tag_name"] as? String,
               let page = (json["html_url"] as? String).flatMap(URL.init(string:)) else {
-            throw NSError(domain: "OpenCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: "No release found on GitHub."])
+            throw NSError(domain: "OpenCleaner", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("No release found on GitHub.")])
         }
         var assets: [String: URL] = [:]
         for a in json["assets"] as? [[String: Any]] ?? [] {
@@ -58,7 +58,7 @@ enum Updater {
     static func install(_ r: Release) async throws {
         func fail(_ m: String) -> NSError { NSError(domain: "OpenCleaner", code: 2, userInfo: [NSLocalizedDescriptionKey: m]) }
         guard let (name, url) = r.assets.first(where: { $0.key.hasSuffix("-macOS.zip") }) else {
-            throw fail("This release has no macOS download.")
+            throw fail(tr("This release has no macOS download."))
         }
         guard let sumsURL = r.assets["SHA256SUMS.txt"] else { throw fail("This release has no checksums, so it was not installed.") }
         let (zip, _) = try await URLSession.shared.download(from: url)
@@ -66,17 +66,17 @@ enum Updater {
         let sums = try String(contentsOf: sumsFile, encoding: .utf8)
         let digest = SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined()
         guard sums.split(separator: "\n").contains(where: { $0.hasPrefix(digest) && $0.hasSuffix(name) }) else {
-            throw fail("The download did not match the release checksum, so it was not installed.")
+            throw fail(tr("The download did not match the release checksum, so it was not installed."))
         }
         let stage = FileManager.default.temporaryDirectory.appendingPathComponent("opencleaner-update-\(r.version)")
         try? FileManager.default.removeItem(at: stage)
         try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
         let unzip = Shell.run(["/usr/bin/ditto", "-x", "-k", zip.path, stage.path])
         let newApp = stage.appendingPathComponent("OpenCleaner.app")
-        guard unzip.status == 0, FileManager.default.fileExists(atPath: newApp.path) else { throw fail("Could not unpack the update.") }
+        guard unzip.status == 0, FileManager.default.fileExists(atPath: newApp.path) else { throw fail(tr("Could not unpack the update.")) }
         let target = Bundle.main.bundleURL
         guard FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
-            throw fail("OpenCleaner cannot replace itself in \(target.deletingLastPathComponent().path). Download it from the release page instead.")
+            throw fail(tr("OpenCleaner cannot replace itself in {0}. Download it from the release page instead.", target.deletingLastPathComponent().path))
         }
         let q = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         let script = """

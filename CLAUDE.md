@@ -10,11 +10,12 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 |---|---|---|
 | `linux-cachyos/` | Python, GTK4 + libadwaita (`opencleaner.py`, one file) | `python3 linux-cachyos/opencleaner.py`; standalone binary: `build_binary.sh` (PyInstaller, bundles GTK4/libadwaita; host tools get the original `LD_LIBRARY_PATH` via `host_env()`) |
 | `macos/` | SwiftUI, Swift package (`Sources/OpenCleaner`) | `./build_app.sh` then `open build/OpenCleaner.app` |
-| `windows/` | C# WinForms, single `Program.cs`, **C# 5 only** | `build.bat` (uses Windows' built-in `csc.exe`) |
+| `windows/` | C# WinForms, `Program.cs` + `Strings.cs` (Spanish texts, shared with WinUI), **C# 5 only** | `build.bat` (uses Windows' built-in `csc.exe`) |
 | `windows-winui/` | C# WinUI 3, .NET 8, UI built in code | `build.bat [win-x64|win-arm64|win-x86]` then `publish\<rid>\OpenCleaner.exe` |
 | `installer/` | Inno Setup | `installer\build_installer.bat` builds the WinUI app and `dist\OpenCleaner-Setup-<arch>.exe` (Windows only, build on a local drive) |
 | `android/` | Kotlin + Jetpack Compose, Gradle | Android Studio, or `gradle assembleDebug` |
 | `transfer/` | git-ignored: prebuilt archives/APK/exe for copying between machines | |
+| `.github/workflows/build.yml` | GitHub Actions: builds all apps + Linux tests on every push; a `v*` tag makes a draft release | see `docs/ci.md`; `.github/scripts/versions.py` checks every app has the same version |
 
 ## Status (update this when it changes)
 
@@ -62,6 +63,12 @@ Windows already have them).
   `-linux-<arch>`, `-android.apk` for the phone app, `-androidtv.apk` for the TV app) and verified against `SHA256SUMS.txt`, so **every release must ship
   `SHA256SUMS.txt` and keep these file names**. Version comes from the app (Info.plist, AssemblyVersion,
   `VERSION` in opencleaner.py, versionName).
+- **English and Spanish** in every app, following the system language (see `docs/i18n/README.md`). Every
+  visible text goes through `tr("English text", args...)` (Android, macOS, Linux) or `L.T(...)` (Windows),
+  with `{0}` placeholders, never sentences glued from pieces; add the Spanish to the app's table
+  (`I18n.kt`, `I18n.swift`, the `ES` dict in `opencleaner.py`, `windows/Strings.cs`) using the glossary there,
+  and run `docs/i18n/check_keys.py`. Saved settings stay in English. Spanish runs ~25% longer: check that
+  fixed-width layouts (WinForms, Android TV, toolbars) still fit.
 - Show free space and, after cleaning, how much was freed.
 - Steam game names come from `store.steampowered.com/api/appdetails`, cached on disk
   (`opencleaner/steam_names`); unknown ids show as "App <id>". Installed apps are detected from
@@ -128,6 +135,11 @@ Windows already have them).
   Inno Setup is found under `C:\Users\Hector\AppData\Local\Programs\Inno Setup 6` (build_installer.bat looks there).
   To get files out, copy them to the shared folder at `\\localhost@9843\DavWWWRoot` (= `~/Winshared` on the Mac,
   seconds); `utmctl file pull` works but is very slow for large files.
+- **Releases are built by GitHub Actions** (`docs/ci.md`): bump every app's version, write `docs/releases/<v>.md`,
+  the user pushes a `v<version>` tag, the workflow makes a draft release that the user publishes. The Android
+  APKs must be signed with the key in the `ANDROID_SIGNING_KEYSTORE` secret (this Mac's `~/.android/debug.keystore`,
+  SHA-256 `ccffce5a…8a48`); a different key breaks in-app updates. Local builds (VM, Docker, Fedora) remain
+  for testing.
 - Release builds: `linux-cachyos/build_release_docker.sh <version>` (x86_64 + arm64 single-file binaries, Debian 12
   base; they need the host's display libraries, which every desktop has). Outputs go to `dist/release-<version>/`.
 - Dialogs and prompts that need passwords, tokens or license acceptance (sudo, SDK licenses, git

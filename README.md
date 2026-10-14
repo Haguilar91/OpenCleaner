@@ -17,6 +17,20 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | `installer/` | Windows installer (Inno Setup) for the WinUI app: x64, arm64 or x86 | on Windows: `installer\build_installer.bat`, then `dist\OpenCleaner-Setup-<arch>.exe` (see [installer/README.md](installer/README.md)) |
 | `android/` | OpenCleaner for Android phones (Kotlin + Compose) and **for Android TV / Google TV / Fire TV** (same project, `tv` flavor, remote-friendly) | `gradle assemblePhoneDebug` / `gradle assembleTvDebug`, then install the APK |
 
+**En español:** OpenCleaner también está en español. Cada app usa el idioma del sistema, así que se
+muestra en español sin configurar nada. Hay un [video en español](docs/videos/opencleaner-1.3-es.mp4).
+
+## Video
+
+A one-minute tour of OpenCleaner 1.3 (click to play):
+
+<p>
+  <a href="docs/videos/opencleaner-1.3-en.mp4"><img src="docs/videos/opencleaner-1.3-en.jpg" width="49%" alt="OpenCleaner 1.3 video, English"></a>
+  <a href="docs/videos/opencleaner-1.3-es.mp4"><img src="docs/videos/opencleaner-1.3-es.jpg" width="49%" alt="Video de OpenCleaner 1.3, en español"></a>
+</p>
+
+English (left) · Español (right)
+
 ## Features
 
 | | Android | macOS | Linux | Windows |
@@ -35,6 +49,7 @@ nothing to remove, plus a disk-usage browser to find what is really taking space
 | **Select several files or folders** (list checkboxes, or right-click / long-press in the map) and delete them at once | yes | yes | yes* | yes* |
 | **Delete setting**: Move to Trash (default) or Delete permanently | permanent only | yes | yes* | yes* |
 | **Update from GitHub releases** inside the app (download checked against SHA256SUMS.txt) | yes | yes | yes* | yes* |
+| **English and Spanish**, following the system language | yes | yes | yes | yes* |
 
 \* written but not yet built or run on that platform; see Status.
 
@@ -54,7 +69,7 @@ the 10 oldest items.
 
 ## Screenshots
 
-macOS, Linux, Android and Android TV screenshots are from 1.3; the Windows ones are older.
+Screenshots are from 1.3.
 
 Linux (`linux-cachyos/`):
 
@@ -125,6 +140,11 @@ Windows, WinForms (`windows/`):
 - **Windows:** temp folders, Windows Update cache, crash dumps, Recycle Bin, browser caches,
   developer caches, Steam.
 
+## Builds
+
+Every push is built and tested on GitHub Actions (Linux x86_64/arm64, macOS, Windows x64/arm64/x86,
+Android phone and TV), and releases are built there too: see [docs/ci.md](docs/ci.md).
+
 ## Updates
 
 Each app checks the latest release on GitHub when it starts (one request to `api.github.com`; nothing
@@ -133,6 +153,16 @@ release, checked against the release's `SHA256SUMS.txt`, and installed: the Wind
 in place, the portable Windows build and the Linux single-file build replace themselves, the Mac app
 replaces itself and relaunches, and Android opens its own installer. Linux running from source shows
 the release page instead.
+
+## Languages
+
+Every app is in **English and Spanish** and follows the system language: Android's language (or the
+per-app language in Android 13+), macOS Language & Region, the desktop language on Linux (`LANGUAGE` /
+`LANG`), and the Windows display language. The texts are keyed by their English wording; the Spanish
+tables are `android/.../I18n.kt`, `macos/.../I18n.swift`, the `ES` table in `linux-cachyos/opencleaner.py`
+and `windows/Strings.cs` (shared by both Windows apps). `docs/i18n/check_keys.py` checks that every text
+has a translation. To see another language without changing the system one: `-AppleLanguages "(es)"` on
+macOS, `LANGUAGE=es` on Linux, `--lang es` on Windows.
 
 ## Safety
 

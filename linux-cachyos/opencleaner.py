@@ -94,7 +94,199 @@ def load_css(provider, text):
         except TypeError:
             provider.load_from_data(text.encode())
 
-VERSION = "1.3"
+# ---------------------------------------------------------------- language
+def _spanish():
+    """True when the desktop language is Spanish (LANGUAGE can list several, e.g. "es:en")."""
+    for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(var, "")
+        if value:
+            return value.split(":")[0].lower().startswith("es")
+    return False
+
+
+SPANISH = _spanish()
+
+
+def tr(en, *args):
+    """Translation keyed by the English text; a missing entry falls back to English. "{0}", "{1}"... are
+    filled from args. A key may start with "context|" when one English word needs two translations."""
+    s = (ES.get(en) if SPANISH else None) or en.split("|", 1)[-1]
+    for i, a in enumerate(args):
+        s = s.replace("{%d}" % i, str(a))
+    return s
+
+
+ES = {
+    # header and tabs
+    "Clean": "Limpiar",
+    "status|Clean": "Limpio",
+    "Disk usage": "Uso del disco",
+    "Apps": "Apps",
+    "Rescan": "Volver a analizar",
+    "{0} free · {1}% used": "{0} libres · {1}% usado",
+    "image-based": "basado en imagen",
+    "(detected from /etc/os-release)": "(detectado en /etc/os-release)",
+    # updates
+    "Check for updates (OpenCleaner {0})": "Buscar actualizaciones (OpenCleaner {0})",
+    "Update to {0}": "Actualizar a {0}",
+    "Could not check for updates: {0}": "No se pudo buscar actualizaciones: {0}",
+    "OpenCleaner {0} is up to date": "OpenCleaner {0} está actualizado",
+    "You have {0}. The update is downloaded from GitHub, checked against the release checksums, and replaces this program; it then restarts.":
+        "Tienes la {0}. La actualización se descarga de GitHub, se comprueba con las sumas de verificación de la versión y reemplaza este programa; luego se reinicia.",
+    "You have {0}, running from source or from a folder OpenCleaner cannot write to. Update it with git pull or your package manager, or download it from the release page.":
+        "Tienes la {0}, ejecutada desde el código fuente o desde una carpeta donde OpenCleaner no puede escribir. Actualízala con git pull o con tu gestor de paquetes, o descárgala desde la página de la versión.",
+    "Update to OpenCleaner {0}?": "¿Actualizar a OpenCleaner {0}?",
+    "Later": "Más tarde",
+    "Release page": "Página de la versión",
+    "Update and restart": "Actualizar y reiniciar",
+    "Updating…": "Actualizando…",
+    "Update failed": "La actualización falló",
+    "This release has no Linux build for {0}.": "Esta versión no tiene una compilación de Linux para {0}.",
+    "This release has no checksums, so it was not installed.": "Esta versión no tiene sumas de verificación, así que no se instaló.",
+    "The download did not match the release checksum, so it was not installed.":
+        "La descarga no coincide con la suma de verificación de la versión, así que no se instaló.",
+    # clean
+    "Scanning…": "Analizando…",
+    "Measuring reclaimable space": "Midiendo el espacio que se puede liberar",
+    "Nothing to clean": "Nada que limpiar",
+    "No reclaimable space found.": "No se encontró espacio para liberar.",
+    "Clean selected": "Limpiar seleccionados",
+    "Scan failed: {0}": "Falló el análisis: {0}",
+    "Scan failed": "Falló el análisis",
+    "Review files": "Revisar archivos",
+    "{0} selected · {1}": "Seleccionados: {0} · {1}",
+    "+ more": "+ más",
+    "Delete selected items?": "¿Eliminar los elementos seleccionados?",
+    "This cannot be undone.": "Esto no se puede deshacer.",
+    "Cancel": "Cancelar",
+    "Cleaning…": "Limpiando…",
+    "Some items failed": "Algunos elementos fallaron",
+    "Cleaning finished": "Limpieza terminada",
+    "freed {0}": "se liberaron {0}",
+    "OK": "Aceptar",
+    "size unknown": "tamaño desconocido",
+    "refusing to delete outside home: {0}": "no se permite eliminar fuera de la carpeta personal: {0}",
+    "cancelled or failed": "cancelado o falló",
+    "failed": "falló",
+    "System": "Sistema",
+    "Browser crash-recovery backups": "Respaldos de recuperación del navegador",
+    "Left behind by browser crash recovery": "Quedaron de la recuperación de fallos del navegador",
+    "Crash-recovery backups": "Respaldos de recuperación",
+    "Old package versions and uninstalled packages": "Versiones viejas de paquetes y paquetes desinstalados",
+    ", plus {0} interrupted download folder(s)": ", más {0} carpeta(s) de descargas interrumpidas",
+    "Pacman package cache": "Caché de paquetes de pacman",
+    "Orphaned packages": "Paquetes huérfanos",
+    "Orphaned packages ({0})": "Paquetes huérfanos ({0})",
+    "Removes:": "Elimina:",
+    "Systemd journal": "Registro de systemd",
+    "Shrinks logs to {0} MiB (currently {1})": "Reduce los registros a {0} MiB (ahora ocupan {1})",
+    "Unused Flatpak runtimes": "Runtimes de Flatpak sin usar",
+    "Runtimes no installed Flatpak app needs": "Runtimes que ninguna app Flatpak instalada necesita",
+    "Large app caches (~/.cache)": "Cachés grandes de apps (~/.cache)",
+    "Rebuilt automatically by the app": "La app la vuelve a crear sola",
+    "Trash": "Papelera",
+    "Permanently deletes everything in your trash": "Elimina para siempre todo lo que hay en la papelera",
+    "Large caches and Trash": "Cachés grandes y papelera",
+    "APT package cache": "Caché de paquetes de APT",
+    "{0} downloaded .deb files; downloaded again when needed": "{0} archivos .deb descargados; se descargan de nuevo cuando hacen falta",
+    "Unused packages ({0})": "Paquetes sin usar ({0})",
+    "Unused packages (autoremove)": "Paquetes sin usar (autoremove)",
+    "Old Snap revisions": "Revisiones viejas de Snap",
+    "Old Snap revisions ({0})": "Revisiones viejas de Snap ({0})",
+    "DNF package cache": "Caché de paquetes de DNF",
+    "Downloaded packages and metadata; downloaded again when needed": "Paquetes y metadatos descargados; se descargan de nuevo cuando hacen falta",
+    "System packages: image-based system, managed by image updates": "Paquetes del sistema: sistema basado en imagen, se gestionan con las actualizaciones de imagen",
+    "App {0} (not in Steam store, maybe a tool)": "App {0} (no está en la tienda de Steam, quizá es una herramienta)",
+    "Some Steam library drives are not mounted, so this game may live there.":
+        "Algunas unidades de bibliotecas de Steam no están montadas, así que este juego podría estar ahí.",
+    "Unknown game (app {0})": "Juego desconocido (app {0})",
+    "Steam leftovers": "Restos de Steam",
+    "Proton prefix, app {0}. Game not installed; may hold Windows save games.":
+        "Prefijo de Proton, app {0}. El juego no está instalado; puede tener partidas guardadas de Windows.",
+    "Orphaned Proton prefixes": "Prefijos de Proton huérfanos",
+    # preview
+    "Move to Trash": "Mover a la papelera",
+    "Delete permanently": "Eliminar para siempre",
+    "No preview for this file type. Use Open to view it in another app.":
+        "No hay vista previa para este tipo de archivo. Usa Abrir para verlo en otra app.",
+    "file": "archivo",
+    "Open": "Abrir",
+    "Close": "Cerrar",
+    "Click a file to preview it.": "Haz clic en un archivo para verlo.",
+    "folder": "carpeta",
+    "…and {0} more": "…y {0} más",
+    # disk usage
+    "Folders": "Carpetas",
+    "Images": "Imágenes",
+    "Video": "Video",
+    "Audio": "Audio",
+    "Documents": "Documentos",
+    "Archives": "Comprimidos",
+    "Other": "Otros",
+    "Biggest first": "Más grandes",
+    "Oldest first": "Más antiguos",
+    "Newest first": "Más recientes",
+    "File type": "Tipo",
+    "Parent folder": "Carpeta superior",
+    "Home": "Carpeta personal",
+    "System (/)": "Sistema (/)",
+    "Sort by size, age or type": "Ordenar por tamaño, antigüedad o tipo",
+    "All": "Todos",
+    "Top {0}": "Primeros {0}",
+    "Show only the first items of the sort": "Mostrar solo los primeros elementos del orden",
+    "Disk map": "Mapa del disco",
+    "What Delete does here (uninstalling is always permanent)": "Qué hace Eliminar aquí (desinstalar siempre es permanente)",
+    "Clear": "Quitar selección",
+    "Move selected to Trash": "Mover seleccionados a la papelera",
+    "Delete selected permanently": "Eliminar seleccionados para siempre",
+    "Cannot read folder: {0}": "No se puede leer la carpeta: {0}",
+    "Measuring…": "Midiendo…",
+    "Empty folder": "Carpeta vacía",
+    "Select": "Seleccionar",
+    "Delete": "Eliminar",
+    "Measuring {0}% ({1} of {2} items)": "Midiendo {0}% ({1} de {2} elementos)",
+    "Total {0}": "Total {0}",
+    "{0} items": "{0} elementos",
+    "This cannot be undone: nothing goes to the Trash.": "Esto no se puede deshacer: nada va a la papelera.",
+    "You can restore them from the Trash.": "Puedes recuperarlos desde la papelera.",
+    "Delete {0} permanently?": "¿Eliminar {0} para siempre?",
+    "Move {0} to the Trash?": "¿Mover {0} a la papelera?",
+    "{0} item(s) deleted": "Se eliminaron {0} elemento(s)",
+    "{0} item(s) moved to the Trash (empty it to free space)": "Se movieron {0} elemento(s) a la papelera (vacíala para liberar espacio)",
+    "Some items could not be deleted": "Algunos elementos no se pudieron eliminar",
+    # apps
+    "Least recently used": "Menos usadas",
+    "Recently used": "Recientes",
+    "Name": "Nombre",
+    "last used: unknown": "último uso: desconocido",
+    "used today": "usada hoy",
+    "used yesterday": "usada ayer",
+    "used {0} days ago": "usada hace {0} días",
+    "used {0} months ago": "usada hace {0} meses",
+    "used {0} years ago": "usada hace {0} años",
+    "Loading apps…": "Cargando apps…",
+    "image-based system: only Flatpak apps can be uninstalled here": "sistema basado en imagen: aquí solo se pueden desinstalar apps Flatpak",
+    "{0} apps · {1}": "{0} apps · {1}",
+    "Package {0}": "Paquete {0}",
+    "Uninstall…": "Desinstalar…",
+    "Removes the package with pacman -Rns (asks for your password).": "Elimina el paquete con pacman -Rns (pide tu contraseña).",
+    "Removes the package and its settings with apt-get remove --purge (asks for your password).":
+        "Elimina el paquete y su configuración con apt-get remove --purge (pide tu contraseña).",
+    "Removes the package with dnf remove (asks for your password).": "Elimina el paquete con dnf remove (pide tu contraseña).",
+    "Removes the Flatpak.": "Elimina el Flatpak.",
+    "Warning: this deletes permanently. Nothing goes to the Trash and it cannot be undone.":
+        "Atención: esto elimina para siempre. Nada va a la papelera y no se puede deshacer.",
+    "Ticked folders are deleted permanently. Folders that may hold your settings or data start unticked.":
+        "Las carpetas marcadas se eliminan para siempre. Las que pueden tener tu configuración o tus datos empiezan sin marcar.",
+    "No leftover folders found in your home directory.": "No se encontraron carpetas sobrantes en tu carpeta personal.",
+    "Uninstall {0}?": "¿Desinstalar {0}?",
+    "Uninstalling {0}…": "Desinstalando {0}…",
+    "{0} uninstalled": "{0} se desinstaló",
+    "{0} folder(s) deleted": "se eliminaron {0} carpeta(s)",
+    "Could not uninstall": "No se pudo desinstalar",
+}
+
+VERSION = "1.4"
 HOME = os.path.expanduser("~")
 JOURNAL_KEEP_MB = 200
 CACHE_MIN_BYTES = 100 * 1024 * 1024
@@ -105,7 +297,7 @@ UNITS = {"B": 1, "K": 1024, "KIB": 1024, "M": 1024**2, "MIB": 1024**2,
 
 def fmt_size(n):
     if n is None:
-        return "size unknown"
+        return tr("size unknown")
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if n < 1024 or unit == "TiB":
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
@@ -196,7 +388,7 @@ def detect_distro(osrel=None, exists=os.path.exists, which=shutil.which):
         name = "Omarchy (Arch Linux)"
     elif did == "raspbian":
         name = "Raspberry Pi OS (Debian)"
-    tail = " · image-based" if immutable else (f" · {pm}" if pm else "")
+    tail = " · " + tr("image-based") if immutable else (f" · {pm}" if pm else "")
     label = name + tail
     version = kv.get("VERSION_ID", "")
     if len(version) > 8:          # rolling releases / container images use build ids, not versions
@@ -249,8 +441,8 @@ def scan_browser_backups():
     items = []
     for p in sorted(glob.glob(os.path.join(HOME, ".config", "*-backup-crashrecovery-*"))):
         if os.path.isdir(p) and not os.path.islink(p):
-            items.append(Item("Browser crash-recovery backups", os.path.basename(p),
-                              "Left behind by browser crash recovery",
+            items.append(Item(tr("Browser crash-recovery backups"), os.path.basename(p),
+                              tr("Left behind by browser crash recovery"),
                               du_bytes(p), True, paths=[p]))
     return items
 
@@ -268,12 +460,12 @@ def scan_pacman_cache():
     stale = glob.glob("/var/cache/pacman/pkg/download-*")
     if not found and not stale:
         return []
-    note = "Old package versions and uninstalled packages"
+    note = tr("Old package versions and uninstalled packages")
     if stale:
-        note += f", plus {len(stale)} interrupted download folder(s)"
+        note += tr(", plus {0} interrupted download folder(s)", len(stale))
     script = ("[ -e /var/lib/pacman/db.lck ] && { echo 'pacman is busy'; exit 1; }; "
               "paccache -rk1; paccache -ruk0; rm -rf /var/cache/pacman/pkg/download-*")
-    return [Item("System", "Pacman package cache", note, total if found else None,
+    return [Item(tr("System"), tr("Pacman package cache"), note, total if found else None,
                  True, root_script=script)]
 
 
@@ -284,11 +476,11 @@ def scan_orphans():
         return []
     info = run(["pacman", "-Qi", *names]).stdout
     size = sum(parse_size(m) or 0 for m in re.findall(r"Installed Size\s*:\s*(.+)", info))
-    return [Item("System", f"Orphaned packages ({len(names)})",
+    return [Item(tr("System"), tr("Orphaned packages ({0})", len(names)),
                  ", ".join(names[:8]) + (" …" if len(names) > 8 else ""),
                  size, False,
                  root_script="pacman -Rns --noconfirm " + " ".join(names),
-                 confirm_note="Removes: " + ", ".join(names))]
+                 confirm_note=tr("Removes:") + " " + ", ".join(names))]
 
 
 def scan_journal():
@@ -300,8 +492,8 @@ def scan_journal():
     reclaim = max(0, used - JOURNAL_KEEP_MB * 1024**2)
     if reclaim < 10 * 1024**2:
         return []
-    return [Item("System", "Systemd journal",
-                 f"Shrinks logs to {JOURNAL_KEEP_MB} MiB (currently {fmt_size(used)})",
+    return [Item(tr("System"), tr("Systemd journal"),
+                 tr("Shrinks logs to {0} MiB (currently {1})", JOURNAL_KEEP_MB, fmt_size(used)),
                  reclaim, True,
                  root_script=f"journalctl --vacuum-size={JOURNAL_KEEP_MB}M")]
 
@@ -313,8 +505,8 @@ def scan_flatpak():
     out = r.stdout + r.stderr
     if "nothing unused" in out.lower():
         return []
-    return [Item("Apps", "Unused Flatpak runtimes",
-                 "Runtimes no installed Flatpak app needs", None, True,
+    return [Item(tr("Apps"), tr("Unused Flatpak runtimes"),
+                 tr("Runtimes no installed Flatpak app needs"), None, True,
                  user_cmd=["flatpak", "uninstall", "--unused", "-y"])]
 
 
@@ -327,15 +519,15 @@ def scan_user_cache():
             if os.path.isdir(p) and not os.path.islink(p):
                 size = du_bytes(p)
                 if size and size >= CACHE_MIN_BYTES:
-                    items.append(Item("Large app caches (~/.cache)", name,
-                                      "Rebuilt automatically by the app", size, False,
+                    items.append(Item(tr("Large app caches (~/.cache)"), name,
+                                      tr("Rebuilt automatically by the app"), size, False,
                                       paths=[p]))
     trash = os.path.join(HOME, ".local/share/Trash")
     if os.path.isdir(trash):
         size = du_bytes(trash)
         if size and size > 1024**2:
-            items.append(Item("Large app caches (~/.cache)", "Trash",
-                              "Permanently deletes everything in your trash", size, False,
+            items.append(Item(tr("Large app caches (~/.cache)"), tr("Trash"),
+                              tr("Permanently deletes everything in your trash"), size, False,
                               paths=[os.path.join(trash, "files"), os.path.join(trash, "info")]))
     return items
 
@@ -356,8 +548,8 @@ def scan_apt_cache():
     if not files:
         return []
     size = sum(os.path.getsize(f) for f in files if os.path.exists(f))
-    return [Item("System", "APT package cache",
-                 f"{len(files)} downloaded .deb files; downloaded again when needed", size, True,
+    return [Item(tr("System"), tr("APT package cache"),
+                 tr("{0} downloaded .deb files; downloaded again when needed", len(files)), size, True,
                  root_script="apt-get clean")]
 
 
@@ -366,10 +558,10 @@ def scan_apt_orphans():
     names = re.findall(r"^Remv (\S+)", r.stdout, re.M)
     if not names:
         return []
-    return [Item("System", f"Unused packages ({len(names)})",
+    return [Item(tr("System"), tr("Unused packages ({0})", len(names)),
                  ", ".join(names[:8]) + (" …" if len(names) > 8 else ""),
                  dpkg_sizes(names), False, root_script="apt-get -y autoremove",
-                 confirm_note="Removes: " + ", ".join(names))]
+                 confirm_note=tr("Removes:") + " " + ", ".join(names))]
 
 
 def scan_snap_old():
@@ -382,7 +574,7 @@ def scan_snap_old():
         return []
     size = sum(os.path.getsize(f"/var/lib/snapd/snaps/{n}_{rev}.snap")
                for n, rev in old if os.path.exists(f"/var/lib/snapd/snaps/{n}_{rev}.snap"))
-    return [Item("System", f"Old Snap revisions ({len(old)})",
+    return [Item(tr("System"), tr("Old Snap revisions ({0})", len(old)),
                  ", ".join(f"{n} r{rev}" for n, rev in old[:6]) + (" …" if len(old) > 6 else ""),
                  size, True,
                  root_script=" && ".join(f"snap remove {n} --revision={rev}" for n, rev in old))]
@@ -393,7 +585,7 @@ def scan_dnf_cache():
     size = sum(du_bytes(d) or 0 for d in dirs)
     if size < 1024**2:
         return []
-    return [Item("System", "DNF package cache", "Downloaded packages and metadata; downloaded again when needed",
+    return [Item(tr("System"), tr("DNF package cache"), tr("Downloaded packages and metadata; downloaded again when needed"),
                  size, True, root_script="dnf clean all")]
 
 
@@ -402,10 +594,10 @@ def scan_dnf_unneeded():
     names = sorted({l.strip() for l in r.stdout.splitlines() if l.strip()})
     if not names:
         return []
-    return [Item("System", f"Unused packages ({len(names)})",
+    return [Item(tr("System"), tr("Unused packages ({0})", len(names)),
                  ", ".join(names[:8]) + (" …" if len(names) > 8 else ""),
                  rpm_sizes(names), False, root_script="dnf -y autoremove",
-                 confirm_note="Removes: " + ", ".join(names))]
+                 confirm_note=tr("Removes:") + " " + ", ".join(names))]
 
 
 NAME_CACHE = os.path.join(HOME, ".cache", "opencleaner", "steam_names.json")
@@ -429,7 +621,7 @@ def steam_name(appid):
         name = data["data"]["name"] if data.get("success") else None
     except Exception:  # noqa: BLE001  offline, delisted, rate-limited
         return None
-    cache[key] = name or f"App {key} (not in Steam store, maybe a tool)"
+    cache[key] = name or tr("App {0} (not in Steam store, maybe a tool)", key)
     try:
         os.makedirs(os.path.dirname(NAME_CACHE), exist_ok=True)
         json.dump(cache, open(NAME_CACHE, "w"))
@@ -456,16 +648,16 @@ def scan_steam_prefixes():
             m = re.search(r"appmanifest_(\d+)", f)
             if m:
                 installed.add(int(m.group(1)))
-    warn = " Some Steam library drives are not mounted, so this game may live there." if missing else ""
+    warn = " " + tr("Some Steam library drives are not mounted, so this game may live there.") if missing else ""
     items = []
     for d in sorted(os.listdir(compat)):
         # non-Steam shortcuts use huge ids; leave those alone
         if d.isdigit() and 0 < int(d) < 2**31 and int(d) not in installed:
             p = os.path.join(compat, d)
             name = steam_name(int(d))
-            title = f"{name}" if name else f"Unknown game (app {d})"
-            items.append(Item("Steam leftovers", title,
-                              f"Proton prefix, app {d}. Game not installed; may hold Windows save games." + warn,
+            title = f"{name}" if name else tr("Unknown game (app {0})", d)
+            items.append(Item(tr("Steam leftovers"), title,
+                              tr("Proton prefix, app {0}. Game not installed; may hold Windows save games.", d) + warn,
                               du_bytes(p), False, paths=[p]))
     return items
 
@@ -474,22 +666,22 @@ def build_scanners(d):
     """(scanner, group, label shown when the scanner finds nothing), for the detected distro."""
     s = []
     if d.pm == "pacman":
-        s += [(scan_pacman_cache, "System", "Pacman package cache"),
-              (scan_orphans, "System", "Orphaned packages")]
+        s += [(scan_pacman_cache, tr("System"), tr("Pacman package cache")),
+              (scan_orphans, tr("System"), tr("Orphaned packages"))]
     elif d.pm == "apt":
-        s += [(scan_apt_cache, "System", "APT package cache"),
-              (scan_apt_orphans, "System", "Unused packages (autoremove)"),
-              (scan_snap_old, "System", "Old Snap revisions")]
+        s += [(scan_apt_cache, tr("System"), tr("APT package cache")),
+              (scan_apt_orphans, tr("System"), tr("Unused packages (autoremove)")),
+              (scan_snap_old, tr("System"), tr("Old Snap revisions"))]
     elif d.pm == "dnf":
-        s += [(scan_dnf_cache, "System", "DNF package cache"),
-              (scan_dnf_unneeded, "System", "Unused packages (autoremove)")]
+        s += [(scan_dnf_cache, tr("System"), tr("DNF package cache")),
+              (scan_dnf_unneeded, tr("System"), tr("Unused packages (autoremove)"))]
     elif d.immutable:
-        s += [(lambda: [], "System", "System packages: image-based system, managed by image updates")]
-    s += [(scan_journal, "System", "Systemd journal"),
-          (scan_flatpak, "Apps", "Unused Flatpak runtimes"),
-          (scan_browser_backups, "Browser crash-recovery backups", "Crash-recovery backups"),
-          (scan_user_cache, "Large app caches (~/.cache)", "Large caches and Trash"),
-          (scan_steam_prefixes, "Steam leftovers", "Orphaned Proton prefixes")]
+        s += [(lambda: [], tr("System"), tr("System packages: image-based system, managed by image updates"))]
+    s += [(scan_journal, tr("System"), tr("Systemd journal")),
+          (scan_flatpak, tr("Apps"), tr("Unused Flatpak runtimes")),
+          (scan_browser_backups, tr("Browser crash-recovery backups"), tr("Crash-recovery backups")),
+          (scan_user_cache, tr("Large app caches (~/.cache)"), tr("Large caches and Trash")),
+          (scan_steam_prefixes, tr("Steam leftovers"), tr("Orphaned Proton prefixes"))]
     return s
 
 
@@ -501,7 +693,7 @@ def safe_remove(path):
     """Delete a path only if it is inside $HOME; never follow symlinks."""
     real_parent = os.path.realpath(os.path.dirname(path))
     if not (real_parent + os.sep).startswith(HOME + os.sep) or real_parent == HOME:
-        raise PermissionError(f"refusing to delete outside home: {path}")
+        raise PermissionError(tr("refusing to delete outside home: {0}", path))
     if os.path.islink(path) or os.path.isfile(path):
         os.remove(path)
     elif os.path.isdir(path):
@@ -518,11 +710,11 @@ def clean_item(item):
         if item.root_script:
             r = run(["pkexec", "sh", "-c", item.root_script])
             if r.returncode != 0:
-                return False, (r.stderr or r.stdout).strip() or "cancelled or failed"
+                return False, (r.stderr or r.stdout).strip() or tr("cancelled or failed")
         if item.user_cmd:
             r = run(item.user_cmd)
             if r.returncode != 0:
-                return False, (r.stderr or r.stdout).strip() or "failed"
+                return False, (r.stderr or r.stdout).strip() or tr("failed")
         return True, "done"
     except Exception as e:  # noqa: BLE001
         return False, str(e)
@@ -573,7 +765,7 @@ def read_head(path):
     return data.decode("utf-8", "replace")
 
 
-def show_preview(parent, path, on_trash=None, trash_label="Move to trash"):
+def show_preview(parent, path, on_trash=None, trash_label=None):
     """Dialog previewing one file (image, cached thumbnail, or start of a text file) so the user
     can decide whether to delete it. on_trash(path) adds a Move to trash button."""
     f = Gio.File.new_for_path(path)
@@ -623,10 +815,10 @@ def show_preview(parent, path, on_trash=None, trash_label="Move to trash"):
             box.append(sw)
             shown = True
     if not shown:
-        box.append(Gtk.Label(label="No preview for this file type. Use Open to view it in another app.",
+        box.append(Gtk.Label(label=tr("No preview for this file type. Use Open to view it in another app."),
                              wrap=True, css_classes=["dim-label"], xalign=0))
     when = mod.to_local().format("%x %X") if mod else ""
-    box.append(Gtk.Label(label=f"{fmt_size(size)} · {ctype or 'file'}\n{when}\n{os.path.dirname(path)}",
+    box.append(Gtk.Label(label=f"{fmt_size(size)} · {ctype or tr('file')}\n{when}\n{os.path.dirname(path)}",
                          css_classes=["caption", "dim-label"], xalign=0, wrap=True, selectable=True))
 
     buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
@@ -634,12 +826,12 @@ def show_preview(parent, path, on_trash=None, trash_label="Move to trash"):
     if video is not None:
         dlg.connect("closed", lambda *_: video.set_file(None))   # stop playback
     if on_trash:
-        trash = Gtk.Button(label=trash_label, css_classes=["destructive-action"])
+        trash = Gtk.Button(label=trash_label or tr("Move to Trash"), css_classes=["destructive-action"])
         trash.connect("clicked", lambda *_: (dlg.close(), on_trash(path)))
         buttons.append(trash)
-    open_btn = Gtk.Button(label="Open")
+    open_btn = Gtk.Button(label=tr("Open"))
     open_btn.connect("clicked", lambda *_: launch_file(f, parent))
-    close = Gtk.Button(label="Close")
+    close = Gtk.Button(label=tr("Close"))
     close.connect("clicked", lambda *_: dlg.close())
     buttons.append(open_btn)
     buttons.append(close)
@@ -656,7 +848,7 @@ def show_review(parent, item):
     """Dialog listing what a Clean item would delete; click a file to preview it."""
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=8,
                   margin_bottom=12, margin_start=12, margin_end=12)
-    box.append(Gtk.Label(label="Click a file to preview it.", css_classes=["dim-label"], xalign=0))
+    box.append(Gtk.Label(label=tr("Click a file to preview it."), css_classes=["dim-label"], xalign=0))
     lst = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
     paths = item.paths[:200]
     for path in paths:
@@ -664,7 +856,7 @@ def show_review(parent, item):
         row = Adw.ActionRow(title=GLib.markup_escape_text(os.path.basename(path)), activatable=not is_dir)
         row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir else "text-x-generic-symbolic"))
         try:
-            label = "folder" if is_dir else fmt_size(os.lstat(path).st_size)
+            label = tr("folder") if is_dir else fmt_size(os.lstat(path).st_size)
         except OSError:
             label = "?"
         row.add_suffix(Gtk.Label(label=label, css_classes=["dim-label"]))
@@ -672,7 +864,7 @@ def show_review(parent, item):
             row.connect("activated", lambda _r, p=path: show_preview(parent, p))
         lst.append(row)
     if len(item.paths) > len(paths):
-        lst.append(Adw.ActionRow(title=f"…and {len(item.paths) - len(paths)} more", activatable=False))
+        lst.append(Adw.ActionRow(title=tr("…and {0} more", len(item.paths) - len(paths)), activatable=False))
     sw = Gtk.ScrolledWindow(min_content_height=320, max_content_height=420, propagate_natural_height=True)
     sw.set_child(lst)
     box.append(sw)
@@ -807,9 +999,9 @@ def install_update(rel):
     arch = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine().lower())
     name = next((n for n in rel["assets"] if arch and n.endswith("-linux-" + arch)), None)
     if not name:
-        raise RuntimeError(f"This release has no Linux build for {platform.machine()}.")
+        raise RuntimeError(tr("This release has no Linux build for {0}.", platform.machine()))
     if "SHA256SUMS.txt" not in rel["assets"]:
-        raise RuntimeError("This release has no checksums, so it was not installed.")
+        raise RuntimeError(tr("This release has no checksums, so it was not installed."))
     with urllib.request.urlopen(rel["assets"]["SHA256SUMS.txt"], timeout=30) as r:
         sums = r.read().decode()
     target = sys.executable
@@ -821,7 +1013,7 @@ def install_update(rel):
             f.write(chunk)
     if not any(line.startswith(h.hexdigest()) and line.endswith(name) for line in sums.splitlines()):
         os.remove(tmp)
-        raise RuntimeError("The download did not match the release checksum, so it was not installed.")
+        raise RuntimeError(tr("The download did not match the release checksum, so it was not installed."))
     os.chmod(tmp, 0o755)
     os.replace(tmp, target)
     return target
@@ -839,11 +1031,11 @@ class Explorer(Gtk.Box):
         self.gen = 0
 
         bar = Gtk.Box(spacing=6, margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
-        self.up_btn = Gtk.Button(icon_name="go-up-symbolic", tooltip_text="Parent folder")
+        self.up_btn = Gtk.Button(icon_name="go-up-symbolic", tooltip_text=tr("Parent folder"))
         self.up_btn.connect("clicked", lambda *_: self.go(os.path.dirname(self.path)))
-        home_btn = Gtk.Button(label="Home")
+        home_btn = Gtk.Button(label=tr("Home"))
         home_btn.connect("clicked", lambda *_: self.set_root(HOME))
-        sys_btn = Gtk.Button(label="System (/)")
+        sys_btn = Gtk.Button(label=tr("System (/)"))
         sys_btn.connect("clicked", lambda *_: self.set_root("/"))
         self.path_label = Gtk.Label(xalign=0, hexpand=True)
         self.path_label.set_ellipsize(Pango.EllipsizeMode.START)
@@ -852,19 +1044,19 @@ class Explorer(Gtk.Box):
         self.entries = []
         self.measured = 0
         self.map_rects = []
-        self.sort_dd = Gtk.DropDown.new_from_strings(SORTS)
-        self.sort_dd.set_tooltip_text("Sort by size, age or type")
+        self.sort_dd = Gtk.DropDown.new_from_strings([tr(x) for x in SORTS])
+        self.sort_dd.set_tooltip_text(tr("Sort by size, age or type"))
         self.sort_dd.connect("notify::selected", self._on_sort)
-        self.top_dd = Gtk.DropDown.new_from_strings(["All"] + [f"Top {n}" for n in TOPS[1:]])
-        self.top_dd.set_tooltip_text("Show only the first items of the sort")
+        self.top_dd = Gtk.DropDown.new_from_strings([tr("All")] + [tr("Top {0}", n) for n in TOPS[1:]])
+        self.top_dd.set_tooltip_text(tr("Show only the first items of the sort"))
         self.top_dd.connect("notify::selected", self._on_top)
-        self.map_btn = Gtk.ToggleButton(icon_name="view-grid-symbolic", tooltip_text="Disk map")
+        self.map_btn = Gtk.ToggleButton(icon_name="view-grid-symbolic", tooltip_text=tr("Disk map"))
         self.map_btn.connect("toggled", self._on_map_toggled)
         self.selected = set()
         self.syncing = False
-        self.delete_dd = Gtk.DropDown.new_from_strings(DELETE_MODES)
+        self.delete_dd = Gtk.DropDown.new_from_strings([tr(x) for x in DELETE_MODES])
         self.delete_dd.set_selected(1 if load_settings().get("delete_mode") == "permanent" else 0)
-        self.delete_dd.set_tooltip_text("What Delete does here (uninstalling is always permanent)")
+        self.delete_dd.set_tooltip_text(tr("What Delete does here (uninstalling is always permanent)"))
         self.delete_dd.connect("notify::selected", lambda dd, _p: save_settings(
             delete_mode="permanent" if dd.get_selected() == 1 else "trash"))
         self.delete_dd.connect("notify::selected", lambda *_: self._set_selected(self.selected))
@@ -903,7 +1095,7 @@ class Explorer(Gtk.Box):
         for label, (r, g, b) in KINDS:
             colour = "#%02x%02x%02x" % (int(r * 255), int(g * 255), int(b * 255))
             legend.append(Gtk.Label(use_markup=True, css_classes=["caption"],
-                                    label=f"<span foreground='{colour}'>■</span> {label}"))
+                                    label=f"<span foreground='{colour}'>■</span> {tr(label)}"))
         map_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         map_box.append(self.map_area)
         map_box.append(legend)
@@ -915,7 +1107,7 @@ class Explorer(Gtk.Box):
 
         self.sel_bar = Gtk.ActionBar(revealed=False)
         self.sel_label = Gtk.Label(css_classes=["dim-label"])
-        clear = Gtk.Button(label="Clear", css_classes=["flat"])
+        clear = Gtk.Button(label=tr("Clear"), css_classes=["flat"])
         clear.connect("clicked", lambda *_: self._set_selected(set()))
         self.del_btn = Gtk.Button(css_classes=["destructive-action"])
         self.del_btn.connect("clicked", lambda *_: self.confirm_delete(
@@ -928,7 +1120,7 @@ class Explorer(Gtk.Box):
 
     # -- selection (list checkboxes and right-click in the map share it)
     def delete_label(self):
-        return DELETE_MODES[self.delete_dd.get_selected()]
+        return tr(DELETE_MODES[self.delete_dd.get_selected()])
 
     def _set_selected(self, paths):
         self.selected = set(paths)
@@ -937,9 +1129,9 @@ class Explorer(Gtk.Box):
             row.check.set_active(row.path in self.selected)
         self.syncing = False
         size = sum(self.sizes.get(p, 0) or 0 for p in self.selected)
-        self.sel_label.set_label(f"{len(self.selected)} selected · {fmt_size(size)}")
-        self.del_btn.set_label("Move selected to Trash" if self.delete_dd.get_selected() == 0
-                               else "Delete selected permanently")
+        self.sel_label.set_label(tr("{0} selected · {1}", len(self.selected), fmt_size(size)))
+        self.del_btn.set_label(tr("Move selected to Trash") if self.delete_dd.get_selected() == 0
+                               else tr("Delete selected permanently"))
         self.sel_bar.set_revealed(bool(self.selected))
         self.map_area.queue_draw()
 
@@ -1059,9 +1251,9 @@ class Explorer(Gtk.Box):
         try:
             entries = list(os.scandir(path))
         except OSError as e:
-            self.status.set_label(f"Cannot read folder: {e.strerror}")
+            self.status.set_label(tr("Cannot read folder: {0}", e.strerror))
             return
-        self.status.set_label("Measuring…")
+        self.status.set_label(tr("Measuring…"))
         self.pending = len(entries)
         self.measured = 0
         self.max_size = 1
@@ -1080,7 +1272,7 @@ class Explorer(Gtk.Box):
         self.progress.set_visible(bool(entries))
         self.progress.set_fraction(0)
         if not entries:
-            self.status.set_label("Empty folder")
+            self.status.set_label(tr("Empty folder"))
         self.map_area.queue_draw()
 
         def work():
@@ -1109,7 +1301,7 @@ class Explorer(Gtk.Box):
             row.mtime = entry.stat(follow_symlinks=False).st_mtime
         except OSError:
             row.mtime = 0
-        row.check = Gtk.CheckButton(valign=Gtk.Align.CENTER, tooltip_text="Select")
+        row.check = Gtk.CheckButton(valign=Gtk.Align.CENTER, tooltip_text=tr("Select"))
         row.check.connect("toggled", lambda c: self.syncing or self._toggle(entry.path))
         row.add_prefix(row.check)
         row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir
@@ -1119,7 +1311,7 @@ class Explorer(Gtk.Box):
         row.bar = Gtk.LevelBar(min_value=0, max_value=1, value=0, width_request=90,
                                valign=Gtk.Align.CENTER)
         trash = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
-                           css_classes=["flat"], tooltip_text="Delete")
+                           css_classes=["flat"], tooltip_text=tr("Delete"))
         trash.connect("clicked", lambda *_: self.confirm_delete([entry.path]))
         for w in (row.bar, row.size_label, trash):
             row.add_suffix(w)
@@ -1148,8 +1340,8 @@ class Explorer(Gtk.Box):
         total = sum(self.sizes.values())
         count = self.measured + self.pending
         pct = self.measured * 100 // max(count, 1)
-        self.status.set_label((f"Measuring {pct}% ({self.measured} of {count} items) · " if self.pending else "")
-                              + f"Total {fmt_size(total)}")
+        self.status.set_label((tr("Measuring {0}% ({1} of {2} items)", pct, self.measured, count) + " · " if self.pending else "")
+                              + tr("Total {0}", fmt_size(total)))
         self.progress.set_fraction(self.measured / max(count, 1))
         self.progress.set_visible(self.pending > 0)
 
@@ -1158,14 +1350,14 @@ class Explorer(Gtk.Box):
         if not paths:
             return
         permanent = self.delete_dd.get_selected() == 1
-        what = f'"{os.path.basename(paths[0])}"' if len(paths) == 1 else f"{len(paths)} items"
-        names = "\n".join(paths[:12]) + (f"\n…and {len(paths) - 12} more" if len(paths) > 12 else "")
-        note = ("This cannot be undone: nothing goes to the Trash." if permanent
-                else "You can restore them from the Trash.")
-        dlg = AlertDialog(heading=(f"Delete {what} permanently?" if permanent else f"Move {what} to the Trash?"),
+        what = f'"{os.path.basename(paths[0])}"' if len(paths) == 1 else tr("{0} items", len(paths))
+        names = "\n".join(paths[:12]) + ("\n" + tr("…and {0} more", len(paths) - 12) if len(paths) > 12 else "")
+        note = (tr("This cannot be undone: nothing goes to the Trash.") if permanent
+                else tr("You can restore them from the Trash."))
+        dlg = AlertDialog(heading=(tr("Delete {0} permanently?", what) if permanent else tr("Move {0} to the Trash?", what)),
                           body=note + "\n\n" + names)
-        dlg.add_response("cancel", "Cancel")
-        dlg.add_response("delete", DELETE_MODES[1 if permanent else 0])
+        dlg.add_response("cancel", tr("Cancel"))
+        dlg.add_response("delete", tr(DELETE_MODES[1 if permanent else 0]))
         dlg.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dlg.set_default_response("cancel")
         dlg.connect("response", lambda d, r: r == "delete" and self.delete(paths, permanent))
@@ -1181,7 +1373,7 @@ class Explorer(Gtk.Box):
                     else:
                         r = run(["gio", "trash", "--", path])
                         if r.returncode != 0:
-                            raise OSError((r.stderr or "failed").strip())
+                            raise OSError((r.stderr or tr("failed")).strip())
                 except Exception as e:  # noqa: BLE001
                     failed.append(f"{os.path.basename(path)}: {e}")
             GLib.idle_add(self._deleted, len(paths) - len(failed), failed, permanent)
@@ -1190,10 +1382,10 @@ class Explorer(Gtk.Box):
     def _deleted(self, done, failed, permanent):
         if done:
             self.win.toast.add_toast(Adw.Toast(
-                title=f"{done} item(s) deleted" if permanent else f"{done} item(s) moved to the Trash (empty it to free space)"))
+                title=tr("{0} item(s) deleted", done) if permanent else tr("{0} item(s) moved to the Trash (empty it to free space)", done)))
         if failed:
-            dlg = AlertDialog(heading="Some items could not be deleted", body="\n".join(failed[:12]))
-            dlg.add_response("ok", "OK")
+            dlg = AlertDialog(heading=tr("Some items could not be deleted"), body="\n".join(failed[:12]))
+            dlg.add_response("ok", tr("OK"))
             dlg.present(self.win)
         self.win.update_free()
         self.reload()
@@ -1215,17 +1407,17 @@ def parse_human(text):
 
 def ago(ts):
     if not ts:
-        return "last used: unknown"
+        return tr("last used: unknown")
     d = (time.time() - ts) / 86400
     if d < 1:
-        return "used today"
+        return tr("used today")
     if d < 2:
-        return "used yesterday"
+        return tr("used yesterday")
     if d < 60:
-        return f"used {int(d)} days ago"
+        return tr("used {0} days ago", int(d))
     if d < 730:
-        return f"used {int(d / 30)} months ago"
-    return f"used {int(d / 365)} years ago"
+        return tr("used {0} months ago", int(d / 30))
+    return tr("used {0} years ago", int(d / 365))
 
 
 def native_owners_sizes(pm, files):
@@ -1345,9 +1537,9 @@ class AppsPage(Gtk.Box):
         self.top = 0
         bar = Gtk.Box(spacing=6, margin_top=8, margin_bottom=4, margin_start=12, margin_end=12)
         self.status = Gtk.Label(xalign=0, hexpand=True, css_classes=["dim-label"])
-        self.sort_dd = Gtk.DropDown.new_from_strings(APP_SORTS)
+        self.sort_dd = Gtk.DropDown.new_from_strings([tr(x) for x in APP_SORTS])
         self.sort_dd.connect("notify::selected", self._on_sort)
-        self.top_dd = Gtk.DropDown.new_from_strings(["All"] + [f"Top {n}" for n in TOPS[1:]])
+        self.top_dd = Gtk.DropDown.new_from_strings([tr("All")] + [tr("Top {0}", n) for n in TOPS[1:]])
         self.top_dd.connect("notify::selected", self._on_top)
         for w in (self.status, self.sort_dd, self.top_dd):
             bar.append(w)
@@ -1360,7 +1552,7 @@ class AppsPage(Gtk.Box):
         self.reload()
 
     def reload(self):
-        self.status.set_label("Loading apps…")
+        self.status.set_label(tr("Loading apps…"))
 
         def work():
             apps = load_apps()
@@ -1390,15 +1582,15 @@ class AppsPage(Gtk.Box):
         while (r := self.list.get_row_at_index(0)) is not None:
             self.list.remove(r)
         total = sum(a["size"] for a in self.apps)
-        note = " · image-based system: only Flatpak apps can be uninstalled here" if DISTRO.immutable else ""
-        self.status.set_label(f"{len(self.apps)} apps · {fmt_size(total)}{note}")
+        note = " · " + tr("image-based system: only Flatpak apps can be uninstalled here") if DISTRO.immutable else ""
+        self.status.set_label(tr("{0} apps · {1}", len(self.apps), fmt_size(total)) + note)
         for a in self.ordered():
-            kind = "Flatpak" if a["kind"] == "flatpak" else "Package " + a["id"]
+            kind = "Flatpak" if a["kind"] == "flatpak" else tr("Package {0}", a["id"])
             row = Adw.ActionRow(title=GLib.markup_escape_text(a["name"]),
                                 subtitle=GLib.markup_escape_text(f"{kind} · {ago(a['last'])}"))
             row.add_suffix(Gtk.Label(label=fmt_size(a["size"]), css_classes=["dim-label"]))
             btn = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
-                             css_classes=["flat"], tooltip_text="Uninstall…")
+                             css_classes=["flat"], tooltip_text=tr("Uninstall…"))
             btn.connect("clicked", lambda _b, app=a: self.review(app))
             row.add_suffix(btn)
             self.list.append(row)
@@ -1408,14 +1600,14 @@ class AppsPage(Gtk.Box):
         left = app_leftovers(app)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=8,
                       margin_bottom=12, margin_start=12, margin_end=12)
-        what = {"pacman": "Removes the package with pacman -Rns (asks for your password).",
-                "apt": "Removes the package and its settings with apt-get remove --purge (asks for your password).",
-                "dnf": "Removes the package with dnf remove (asks for your password)."}.get(
-                    app.get("pm"), "Removes the Flatpak.")
-        box.append(Gtk.Label(label="Warning: this deletes permanently. Nothing goes to the Trash and it "
-                             "cannot be undone.", wrap=True, xalign=0, css_classes=["error"]))
-        box.append(Gtk.Label(label=what + " Ticked folders are deleted permanently. "
-                             "Folders that may hold your settings or data start unticked.",
+        what = {"pacman": tr("Removes the package with pacman -Rns (asks for your password)."),
+                "apt": tr("Removes the package and its settings with apt-get remove --purge (asks for your password)."),
+                "dnf": tr("Removes the package with dnf remove (asks for your password).")}.get(
+                    app.get("pm"), tr("Removes the Flatpak."))
+        box.append(Gtk.Label(label=tr("Warning: this deletes permanently. Nothing goes to the Trash and it " +
+                                      "cannot be undone."), wrap=True, xalign=0, css_classes=["error"]))
+        box.append(Gtk.Label(label=what + " " + tr("Ticked folders are deleted permanently. " +
+                                                   "Folders that may hold your settings or data start unticked."),
                              wrap=True, xalign=0, css_classes=["dim-label"]))
         lst = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
         checks = []
@@ -1431,13 +1623,13 @@ class AppsPage(Gtk.Box):
         if left:
             box.append(lst)
         else:
-            box.append(Gtk.Label(label="No leftover folders found in your home directory.", xalign=0))
-        go = Gtk.Button(label="Delete permanently", css_classes=["destructive-action"], halign=Gtk.Align.END)
+            box.append(Gtk.Label(label=tr("No leftover folders found in your home directory."), xalign=0))
+        go = Gtk.Button(label=tr("Delete permanently"), css_classes=["destructive-action"], halign=Gtk.Align.END)
         box.append(go)
         view = ToolbarView()
         view.add_top_bar(Adw.HeaderBar())
         view.set_content(box)
-        dlg = Dialog(title=f"Uninstall {app['name']}?", content_width=560)
+        dlg = Dialog(title=tr("Uninstall {0}?", app["name"]), content_width=560)
         dlg.set_child(view)
 
         def confirm(*_):
@@ -1448,7 +1640,7 @@ class AppsPage(Gtk.Box):
         dlg.present(self.win)
 
     def uninstall(self, app, folders):
-        self.status.set_label(f"Uninstalling {app['name']}…")
+        self.status.set_label(tr("Uninstalling {0}…", app["name"]))
 
         def work():
             if app["kind"] == "native":
@@ -1472,10 +1664,10 @@ class AppsPage(Gtk.Box):
     def _uninstalled(self, app, ok, msg, moved):
         if ok:
             self.win.toast.add_toast(Adw.Toast(
-                title=f"{app['name']} uninstalled" + (f", {moved} folder(s) deleted" if moved else "")))
+                title=tr("{0} uninstalled", app["name"]) + (", " + tr("{0} folder(s) deleted", moved) if moved else "")))
         else:
-            dlg = AlertDialog(heading="Could not uninstall", body=msg or "cancelled or failed")
-            dlg.add_response("ok", "OK")
+            dlg = AlertDialog(heading=tr("Could not uninstall"), body=msg or tr("cancelled or failed"))
+            dlg.add_response("ok", tr("OK"))
             dlg.present(self.win)
         self.win.update_free()
         self.reload()
@@ -1490,7 +1682,7 @@ class Window(Adw.ApplicationWindow):
 
         toolbar = ToolbarView()
         header = Adw.HeaderBar()
-        self.scan_btn = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Rescan")
+        self.scan_btn = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text=tr("Rescan"))
         self.scan_btn.connect("clicked", self.on_refresh)
         brand = Gtk.Label(label="OpenCleaner", css_classes=["title-4"], margin_start=6, margin_end=10,
                           tooltip_text=f"OpenCleaner {VERSION}")
@@ -1498,7 +1690,7 @@ class Window(Adw.ApplicationWindow):
         header.pack_start(self.scan_btn)
         self.update = None
         self.update_btn = Gtk.Button(icon_name="software-update-available-symbolic",
-                                     tooltip_text=f"Check for updates (OpenCleaner {VERSION})")
+                                     tooltip_text=tr("Check for updates (OpenCleaner {0})", VERSION))
         self.update_btn.connect("clicked", lambda *_: self.on_update_clicked())
         header.pack_end(self.update_btn)
         self.free_label = Gtk.Label(css_classes=["dim-label"])
@@ -1510,14 +1702,14 @@ class Window(Adw.ApplicationWindow):
 
         self.toast = Adw.ToastOverlay()
         self.stack = Gtk.Stack()
-        self.spinner_page = Adw.StatusPage(title="Scanning…",
-                                           description="Measuring reclaimable space")
+        self.spinner_page = Adw.StatusPage(title=tr("Scanning…"),
+                                           description=tr("Measuring reclaimable space"))
         self.spinner_page.set_child(Gtk.Spinner(spinning=True, width_request=32,
                                                 height_request=32))
         self.page = Adw.PreferencesPage()
         self.empty_page = Adw.StatusPage(icon_name="emblem-ok-symbolic",
-                                         title="Nothing to clean",
-                                         description="No reclaimable space found.")
+                                         title=tr("Nothing to clean"),
+                                         description=tr("No reclaimable space found."))
         self.stack.add_named(self.spinner_page, "scan")
         self.stack.add_named(self.page, "list")
         self.stack.add_named(self.empty_page, "empty")
@@ -1528,8 +1720,8 @@ class Window(Adw.ApplicationWindow):
         self.total_label = Gtk.Label(xalign=0, hexpand=True)
         self.distro_label = Gtk.Label(label=DISTRO.short, css_classes=["dim-label", "caption"],
                                       ellipsize=Pango.EllipsizeMode.END,
-                                      tooltip_text=DISTRO.label + " (detected from /etc/os-release)")
-        self.clean_btn = Gtk.Button(label="Clean selected", css_classes=["suggested-action"])
+                                      tooltip_text=DISTRO.label + " " + tr("(detected from /etc/os-release)"))
+        self.clean_btn = Gtk.Button(label=tr("Clean selected"), css_classes=["suggested-action"])
         self.clean_btn.connect("clicked", self.on_clean)
         bar.append(self.total_label)
         bar.append(self.distro_label)
@@ -1539,11 +1731,11 @@ class Window(Adw.ApplicationWindow):
         clean_box.append(self.toast)
         clean_box.append(bar)
         self.explorer = Explorer(self)
-        self.views.add_titled_with_icon(clean_box, "clean", "Clean", "edit-clear-all-symbolic")
-        self.views.add_titled_with_icon(self.explorer, "explore", "Disk usage",
+        self.views.add_titled_with_icon(clean_box, "clean", tr("Clean"), "edit-clear-all-symbolic")
+        self.views.add_titled_with_icon(self.explorer, "explore", tr("Disk usage"),
                                         "drive-harddisk-symbolic")
         self.apps_page = AppsPage(self)
-        self.views.add_titled_with_icon(self.apps_page, "apps", "Apps", "view-app-grid-symbolic")
+        self.views.add_titled_with_icon(self.apps_page, "apps", tr("Apps"), "view-app-grid-symbolic")
         toolbar.set_content(self.views)
         self.set_content(toolbar)
         self.free_before = None
@@ -1566,12 +1758,12 @@ class Window(Adw.ApplicationWindow):
         if rel and is_newer(rel["version"], VERSION):
             self.update = rel
             self.update_btn.set_icon_name("")
-            self.update_btn.set_label(f"Update to {rel['version']}")
+            self.update_btn.set_label(tr("Update to {0}", rel["version"]))
             self.update_btn.add_css_class("suggested-action")
             if manual:
                 self.offer_update()
         elif manual:
-            text = f"Could not check for updates: {err}" if err else f"OpenCleaner {VERSION} is up to date"
+            text = tr("Could not check for updates: {0}", err) if err else tr("OpenCleaner {0} is up to date", VERSION)
             self.toast.add_toast(Adw.Toast(title=text))
 
     def on_update_clicked(self):
@@ -1583,16 +1775,16 @@ class Window(Adw.ApplicationWindow):
     def offer_update(self):
         rel = self.update
         if can_self_update():
-            body = (f"You have {VERSION}. The update is downloaded from GitHub, checked against the release "
-                    "checksums, and replaces this program; it then restarts.")
+            body = tr("You have {0}. The update is downloaded from GitHub, checked against the release " +
+                      "checksums, and replaces this program; it then restarts.", VERSION)
         else:
-            body = (f"You have {VERSION}, running from source or from a folder OpenCleaner cannot write to. "
-                    "Update it with git pull or your package manager, or download it from the release page.")
-        dlg = AlertDialog(heading=f"Update to OpenCleaner {rel['version']}?", body=body + "\n\n" + rel["notes"][:600])
-        dlg.add_response("later", "Later")
-        dlg.add_response("page", "Release page")
+            body = tr("You have {0}, running from source or from a folder OpenCleaner cannot write to. " +
+                      "Update it with git pull or your package manager, or download it from the release page.", VERSION)
+        dlg = AlertDialog(heading=tr("Update to OpenCleaner {0}?", rel["version"]), body=body + "\n\n" + rel["notes"][:600])
+        dlg.add_response("later", tr("Later"))
+        dlg.add_response("page", tr("Release page"))
         if can_self_update():
-            dlg.add_response("update", "Update and restart")
+            dlg.add_response("update", tr("Update and restart"))
             dlg.set_response_appearance("update", Adw.ResponseAppearance.SUGGESTED)
         dlg.connect("response", lambda d, r: self._update_response(r))
         dlg.present(self)
@@ -1602,7 +1794,7 @@ class Window(Adw.ApplicationWindow):
             Gio.AppInfo.launch_default_for_uri(self.update["page"], None)
         elif response == "update":
             self.update_btn.set_sensitive(False)
-            self.update_btn.set_label("Updating…")
+            self.update_btn.set_label(tr("Updating…"))
 
             def work():
                 try:
@@ -1615,9 +1807,9 @@ class Window(Adw.ApplicationWindow):
     def _updated(self, path, err):
         if err:
             self.update_btn.set_sensitive(True)
-            self.update_btn.set_label(f"Update to {self.update['version']}")
-            dlg = AlertDialog(heading="Update failed", body=err + "\n\n" + self.update["page"])
-            dlg.add_response("ok", "OK")
+            self.update_btn.set_label(tr("Update to {0}", self.update["version"]))
+            dlg = AlertDialog(heading=tr("Update failed"), body=err + "\n\n" + self.update["page"])
+            dlg.add_response("ok", tr("OK"))
             dlg.present(self)
             return
         subprocess.Popen([path], env=host_env(), start_new_session=True)   # the new version
@@ -1626,7 +1818,7 @@ class Window(Adw.ApplicationWindow):
     def update_free(self):
         u = shutil.disk_usage("/")
         pct = round(u.used / u.total * 100)
-        self.free_label.set_label(f"/ {fmt_size(u.free)} free · {pct}% used")
+        self.free_label.set_label("/ " + tr("{0} free · {1}% used", fmt_size(u.free), pct))
         return u.free
 
     def on_refresh(self, *_):
@@ -1652,9 +1844,9 @@ class Window(Adw.ApplicationWindow):
             for fn, group, label in SCANNERS:
                 try:
                     found = fn()
-                    items += found or [Item(group, label, "Nothing to clean", 0, empty=True)]
+                    items += found or [Item(group, label, tr("Nothing to clean"), 0, empty=True)]
                 except Exception as e:  # noqa: BLE001
-                    items.append(Item(group, label, f"Scan failed: {e}", None,
+                    items.append(Item(group, label, tr("Scan failed: {0}", e), None,
                                       empty=True, failed=True))
             GLib.idle_add(self.show_items, items)
 
@@ -1681,14 +1873,14 @@ class Window(Adw.ApplicationWindow):
             check.connect("toggled", lambda *_: self.update_total())
             row.add_prefix(check)
             if it.empty:
-                text, css = ("Scan failed", "error") if it.failed else ("Clean ✓", "success")
+                text, css = (tr("Scan failed"), "error") if it.failed else (tr("status|Clean") + " ✓", "success")
                 row.add_suffix(Gtk.Label(label=text, css_classes=[css]))
             else:
                 row.set_activatable_widget(check)
                 row.add_suffix(Gtk.Label(label=fmt_size(it.size), css_classes=["dim-label"]))
                 if it.paths:
                     review = Gtk.Button(icon_name="view-reveal-symbolic", valign=Gtk.Align.CENTER,
-                                        css_classes=["flat"], tooltip_text="Review files")
+                                        css_classes=["flat"], tooltip_text=tr("Review files"))
                     review.connect("clicked", lambda _b, i=it: show_review(self, i))
                     row.add_suffix(review)
             g.add(row)
@@ -1704,7 +1896,7 @@ class Window(Adw.ApplicationWindow):
         known = sum(i.size or 0 for i in sel)
         unknown = any(i.size is None for i in sel)
         self.total_label.set_label(
-            f"{len(sel)} selected · {fmt_size(known)}" + (" + more" if unknown else ""))
+            tr("{0} selected · {1}", len(sel), fmt_size(known)) + (" " + tr("+ more") if unknown else ""))
         self.clean_btn.set_sensitive(bool(sel) and not self.busy)
 
     # -- cleaning
@@ -1715,10 +1907,10 @@ class Window(Adw.ApplicationWindow):
             lines.append(f"• {it.title} ({fmt_size(it.size)})")
             if it.confirm_note:
                 lines.append(f"   {it.confirm_note}")
-        dlg = AlertDialog(heading="Delete selected items?",
-                              body="This cannot be undone.\n\n" + "\n".join(lines))
-        dlg.add_response("cancel", "Cancel")
-        dlg.add_response("clean", "Clean")
+        dlg = AlertDialog(heading=tr("Delete selected items?"),
+                              body=tr("This cannot be undone.") + "\n\n" + "\n".join(lines))
+        dlg.add_response("cancel", tr("Cancel"))
+        dlg.add_response("clean", tr("Clean"))
         dlg.set_response_appearance("clean", Adw.ResponseAppearance.DESTRUCTIVE)
         dlg.set_default_response("cancel")
         dlg.connect("response", lambda d, r: r == "clean" and self.do_clean(sel))
@@ -1729,7 +1921,7 @@ class Window(Adw.ApplicationWindow):
         self.free_before = self.update_free()
         self.clean_btn.set_sensitive(False)
         self.scan_btn.set_sensitive(False)
-        self.spinner_page.set_title("Cleaning…")
+        self.spinner_page.set_title(tr("Cleaning…"))
         self.stack.set_visible_child_name("scan")
 
         def work():
@@ -1740,16 +1932,16 @@ class Window(Adw.ApplicationWindow):
 
     def clean_done(self, results):
         self.busy = False
-        self.spinner_page.set_title("Scanning…")
+        self.spinner_page.set_title(tr("Scanning…"))
         failed = [(it, msg) for it, ok, msg in results if not ok]
         if failed:
             body = "\n".join(f"• {it.title}: {msg[:200]}" for it, msg in failed)
-            dlg = AlertDialog(heading="Some items failed", body=body)
-            dlg.add_response("ok", "OK")
+            dlg = AlertDialog(heading=tr("Some items failed"), body=body)
+            dlg.add_response("ok", tr("OK"))
             dlg.present(self)
         else:
             freed = self.update_free() - (self.free_before or 0)
-            msg = "Cleaning finished" + (f" · freed {fmt_size(freed)}" if freed > 0 else "")
+            msg = tr("Cleaning finished") + (" · " + tr("freed {0}", fmt_size(freed)) if freed > 0 else "")
             self.toast.add_toast(Adw.Toast(title=msg))
         self.update_free()
         self.explorer.reload()

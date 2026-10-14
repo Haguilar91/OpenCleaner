@@ -12,9 +12,9 @@ public sealed class CleanView : UserControl
     private readonly Action freeChanged;
     private readonly StackPanel listPanel = new() { Spacing = 6, Margin = new Thickness(24, 4, 24, 16) };
     private readonly TextBlock summary = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button scanBtn = new() { Content = "Rescan" };
-    private readonly Button adminBtn = new() { Content = "Restart as administrator" };
-    private readonly Button cleanBtn = new() { Content = "Clean selected" };
+    private readonly Button scanBtn = new() { Content = L.T("Rescan") };
+    private readonly Button adminBtn = new() { Content = L.T("Restart as administrator") };
+    private readonly Button cleanBtn = new() { Content = L.T("Clean selected") };
     private readonly ProgressRing ring = new() { Width = 22, Height = 22, Visibility = Visibility.Collapsed };
     private readonly List<(Item item, CheckBox box)> rows = new();
     private bool busy;
@@ -84,7 +84,7 @@ public sealed class CleanView : UserControl
     private async Task ScanAsync()
     {
         if (busy) return;
-        SetBusy(true, "Scanning...");
+        SetBusy(true, L.T("Scanning..."));
         List<Item> found;
         try
         {
@@ -93,7 +93,7 @@ public sealed class CleanView : UserControl
         catch (Exception ex)
         {
             found = new List<Item>();
-            await Ui.Message(XamlRoot, "Scan failed", ex.Message);
+            await Ui.Message(XamlRoot, L.T("Scan failed"), ex.Message);
         }
         Populate(found);
         SetBusy(false, "");
@@ -160,8 +160,8 @@ public sealed class CleanView : UserControl
             TextWrapping = TextWrapping.Wrap,
         });
 
-        string sizeText = it.Empty ? (it.Failed ? "Scan failed" : "Clean")
-            : (it.NeedsAdmin && !isAdmin ? "Needs admin" : Util.Fmt(it.Size));
+        string sizeText = it.Empty ? (it.Failed ? L.T("Scan failed") : L.T("status|Clean"))
+            : (it.NeedsAdmin && !isAdmin ? L.T("Needs admin") : Util.Fmt(it.Size));
         var size = new TextBlock { Text = sizeText, VerticalAlignment = VerticalAlignment.Center };
         if (it.Empty) size.Foreground = it.Failed ? Ui.Red : Ui.Green;
         else size.Foreground = Ui.Res("TextFillColorSecondaryBrush");
@@ -178,7 +178,7 @@ public sealed class CleanView : UserControl
                 Content = new FontIcon { Glyph = "\uE7B3", FontSize = 14 },
                 Padding = new Thickness(8, 4, 8, 4),
             };
-            ToolTipService.SetToolTip(review, "Review files");
+            ToolTipService.SetToolTip(review, L.T("Review files"));
             review.Click += async (_, _) => await Preview.Review(XamlRoot, it);
             Grid.SetColumn(review, 3);
             g.Children.Add(review);
@@ -204,7 +204,7 @@ public sealed class CleanView : UserControl
         {
             if (it.Size >= 0) known += it.Size; else unknown = true;
         }
-        summary.Text = $"{sel.Count} selected  |  {Util.Fmt(known)}" + (unknown ? " + more" : "");
+        summary.Text = L.T("{0} selected  |  {1}", sel.Count, Util.Fmt(known)) + (unknown ? " " + L.T("+ more") : "");
         cleanBtn.IsEnabled = sel.Count > 0 && !busy;
     }
 
@@ -213,21 +213,21 @@ public sealed class CleanView : UserControl
         var sel = Selected();
         if (sel.Count == 0 || busy) return;
 
-        var sb = new StringBuilder("This cannot be undone.\n\n");
+        var sb = new StringBuilder(L.T("This cannot be undone.") + "\n\n");
         foreach (Item it in sel) sb.AppendLine($"• {it.Title}  ({Util.Fmt(it.Size)})");
-        if (!await Ui.Confirm(XamlRoot, "Delete selected items?", sb.ToString(), "Clean")) return;
+        if (!await Ui.Confirm(XamlRoot, L.T("Delete selected items?"), sb.ToString(), L.T("Clean"))) return;
 
         long before = Util.FreeSpace();
-        SetBusy(true, "Cleaning...");
+        SetBusy(true, L.T("Cleaning..."));
         var results = await Task.Run(() => sel.Select(Scanners.Clean).ToList());
         SetBusy(false, "");
         freeChanged();
 
         long freed = Util.FreeSpace() - before;
-        var msg = new StringBuilder("Cleaning finished");
-        if (freed > 0) msg.Append($"  |  freed {Util.Fmt(freed)}");
+        var msg = new StringBuilder(L.T("Cleaning finished"));
+        if (freed > 0) msg.Append("  |  " + L.T("freed {0}", Util.Fmt(freed)));
         int skipped = results.Sum(r => r.Skipped);
-        if (skipped > 0) msg.Append($"\n\n{skipped} file(s) were in use and skipped.");
+        if (skipped > 0) msg.Append("\n\n" + L.T("{0} file(s) were in use and skipped.", skipped));
         foreach (var r in results)
             if (r.Error != null) msg.Append($"\n\n{r.Title}: {r.Error}");
         await Ui.Message(XamlRoot, "OpenCleaner", msg.ToString());

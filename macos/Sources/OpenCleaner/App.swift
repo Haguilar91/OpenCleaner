@@ -45,35 +45,35 @@ struct RootView: View {
             Text("OpenCleaner").font(.system(size: 15, weight: .bold))
             Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.borderless)
-                .help("Rescan")
+                .help(tr("Rescan"))
                 .disabled(store.busy)
             Spacer()
             Picker("", selection: $store.tab) {
-                Text("Clean").tag(0)
-                Text("Disk usage").tag(1)
-                Text("Apps").tag(2)
+                Text(tr("Clean")).tag(0)
+                Text(tr("Disk usage")).tag(1)
+                Text(tr("Apps")).tag(2)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 300)
             Spacer()
             if let u = store.update {
-                Button(store.updating ? "Updating\u{2026}" : "Update to \(u.version)") { store.offerUpdate = true }
+                Button(store.updating ? tr("Updating…") : tr("Update to {0}", u.version)) { store.offerUpdate = true }
                     .buttonStyle(.borderedProminent).controlSize(.small).disabled(store.updating)
             } else {
                 Button { Task { await store.checkForUpdates(manual: true) } } label: {
                     Image(systemName: "arrow.down.circle")
                 }
-                .buttonStyle(.borderless).help("Check for updates (OpenCleaner \(Updater.currentVersion))")
+                .buttonStyle(.borderless).help(tr("Check for updates (OpenCleaner {0})", Updater.currentVersion))
             }
             Text(store.freeText).font(.callout).foregroundStyle(.secondary)
         }
-        .alert("Update to OpenCleaner \(store.update?.version ?? "")?", isPresented: $store.offerUpdate) {
-            Button("Update and restart") { Task { await store.installUpdate() } }
-            Button("Release page") { if let u = store.update?.page { NSWorkspace.shared.open(u) } }
-            Button("Later", role: .cancel) {}
+        .alert(tr("Update to OpenCleaner {0}?", store.update?.version ?? ""), isPresented: $store.offerUpdate) {
+            Button(tr("Update and restart")) { Task { await store.installUpdate() } }
+            Button(tr("Release page")) { if let u = store.update?.page { NSWorkspace.shared.open(u) } }
+            Button(tr("Later"), role: .cancel) {}
         } message: {
-            Text("You have \(Updater.currentVersion). The update is downloaded from GitHub, checked against the release checksums, and installed in place of this app.\n\n" + String((store.update?.notes ?? "").prefix(600)))
+            Text(tr("You have {0}. The update is downloaded from GitHub, checked against the release checksums, and installed in place of this app.", Updater.currentVersion) + "\n\n" + String((store.update?.notes ?? "").prefix(600)))
         }
         .padding(.leading, 82)        // room for the window's close/minimise/zoom buttons
         .padding(.trailing, 18)

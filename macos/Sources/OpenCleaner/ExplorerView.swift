@@ -10,13 +10,15 @@ struct Entry: Identifiable {
 
 /// What deleting from Disk usage does. Uninstall is always permanent and does not use this.
 enum DeleteMode: String, CaseIterable, Identifiable {
-    case trash = "Move to Trash", permanent = "Delete permanently"
+    case trash = "Move to Trash", permanent = "Delete permanently"   // raw values are saved settings: keep them in English
     var id: String { rawValue }
+    var label: String { tr(rawValue) }
 }
 
 enum SortMode: String, CaseIterable, Identifiable {
     case size = "Biggest first", oldest = "Oldest first", newest = "Newest first", type = "File type"
     var id: String { rawValue }
+    var label: String { tr(rawValue) }
 }
 
 @MainActor
@@ -59,8 +61,8 @@ final class ExplorerModel: ObservableObject {
         return topN > 0 ? Array(list.prefix(topN)) : list
     }
     var statusText: String {
-        var s = measuring ? "Measuring \(percent)% (\(measured) of \(itemCount) items) \u{00B7} " : ""
-        s += "Total \(fmt(total))"
+        var s = measuring ? tr("Measuring {0}% ({1} of {2} items)", percent, measured, itemCount) + " \u{00B7} " : ""
+        s += tr("Total {0}", fmt(total))
         if let e = error { s += " · \(e)" }
         return s
     }
@@ -130,7 +132,7 @@ final class ExplorerModel: ObservableObject {
             }
         }
         selected.subtract(todo)
-        error = failed.isEmpty ? nil : "Could not delete " + failed.joined(separator: "; ")
+        error = failed.isEmpty ? nil : tr("Could not delete {0}", failed.joined(separator: "; "))
         reload()
     }
 }
@@ -144,31 +146,31 @@ struct ExplorerView: View {
             HStack(spacing: 8) {
                 Button { model.up() } label: { Image(systemName: "chevron.up") }
                     .disabled(!model.canGoUp)
-                Button("Home") { model.setRoot(URL(fileURLWithPath: home)) }
-                Button("System (/)") { model.setRoot(URL(fileURLWithPath: "/")) }
+                Button(tr("Home")) { model.setRoot(URL(fileURLWithPath: home)) }.fixedSize()
+                Button(tr("System (/)")) { model.setRoot(URL(fileURLWithPath: "/")) }.fixedSize()
                 Text(model.path.path)
                     .lineLimit(1).truncationMode(.head).foregroundStyle(.secondary)
                 Spacer()
-                Picker("Sort", selection: $model.sort) {
-                    ForEach(SortMode.allCases) { Text($0.rawValue).tag($0) }
+                Picker(tr("Sort"), selection: $model.sort) {
+                    ForEach(SortMode.allCases) { Text($0.label).tag($0) }
                 }
-                .pickerStyle(.menu).frame(width: 140).help("Sort by size, age or type")
-                Picker("Show", selection: $model.topN) {
-                    Text("All").tag(0)
-                    ForEach([5, 10, 50, 100], id: \.self) { Text("Top \($0)").tag($0) }
+                .pickerStyle(.menu).labelsHidden().frame(width: 140).help(tr("Sort by size, age or type"))
+                Picker(tr("Show"), selection: $model.topN) {
+                    Text(tr("All")).tag(0)
+                    ForEach([5, 10, 50, 100], id: \.self) { Text(tr("Top {0}", $0)).tag($0) }
                 }
-                .pickerStyle(.menu).frame(width: 100).help("Show only the first items of the sort")
+                .pickerStyle(.menu).labelsHidden().frame(width: 120).help(tr("Show only the first items of the sort"))
                 Picker("", selection: $model.mapMode) {
                     Image(systemName: "list.bullet").tag(false)
                     Image(systemName: "square.grid.2x2").tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 80)
-                .help("List or map")
+                .help(tr("List or map"))
                 Picker("", selection: $model.deleteMode) {
-                    ForEach(DeleteMode.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(DeleteMode.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.menu).labelsHidden().frame(width: 160)
-                .help("What Delete does in Disk usage (uninstalling is always permanent)")
+                .help(tr("What Delete does in Disk usage (uninstalling is always permanent)"))
             }
             .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 4)
             Text(model.statusText)
@@ -197,11 +199,11 @@ struct ExplorerView: View {
             if !model.selected.isEmpty {
                 Divider()
                 HStack {
-                    Text("\(model.selected.count) selected \u{00B7} \(fmt(model.selectedSize))")
+                    Text(tr("{0} selected · {1}", model.selected.count, fmt(model.selectedSize)))
                         .foregroundStyle(.secondary)
-                    Button("Clear") { model.selected = [] }.buttonStyle(.borderless)
+                    Button(tr("Clear")) { model.selected = [] }.buttonStyle(.borderless)
                     Spacer()
-                    Button(model.deleteMode == .trash ? "Move selected to Trash" : "Delete selected permanently",
+                    Button(model.deleteMode == .trash ? tr("Move selected to Trash") : tr("Delete selected permanently"),
                            role: .destructive) {
                         model.pendingDelete = model.visible.map(\.id).filter { model.selected.contains($0) }
                             + model.selected.filter { u in !model.visible.contains { $0.id == u } }
@@ -214,30 +216,30 @@ struct ExplorerView: View {
         }
         .onAppear { if model.entries.isEmpty { model.reload() } }
         .sheet(item: Binding(get: { model.preview.map(Identified.init) }, set: { model.preview = $0?.url })) { f in
-            PreviewSheet(url: f.url, deleteTitle: model.deleteMode.rawValue) { model.pendingDelete = [$0] }
+            PreviewSheet(url: f.url, deleteTitle: model.deleteMode.label) { model.pendingDelete = [$0] }
         }
         .alert(confirmTitle, isPresented: Binding(get: { !model.pendingDelete.isEmpty },
                                                   set: { if !$0 { model.pendingDelete = [] } })) {
-            Button(model.deleteMode.rawValue, role: .destructive) {
+            Button(model.deleteMode.label, role: .destructive) {
                 model.deletePending()
                 store.updateFree()
             }
-            Button("Cancel", role: .cancel) { model.pendingDelete = [] }
+            Button(tr("Cancel"), role: .cancel) { model.pendingDelete = [] }
         } message: { Text(confirmMessage) }
     }
 
     private var confirmTitle: String {
         let n = model.pendingDelete.count
-        let what = n == 1 ? "\"\(model.pendingDelete[0].lastPathComponent)\"" : "\(n) items"
-        return model.deleteMode == .trash ? "Move \(what) to the Trash?" : "Delete \(what) permanently?"
+        let what = n == 1 ? "\"\(model.pendingDelete[0].lastPathComponent)\"" : tr("{0} items", n)
+        return model.deleteMode == .trash ? tr("Move {0} to the Trash?", what) : tr("Delete {0} permanently?", what)
     }
 
     private var confirmMessage: String {
         let names = model.pendingDelete.prefix(12).map { $0.path }.joined(separator: "\n")
-        let more = model.pendingDelete.count > 12 ? "\n…and \(model.pendingDelete.count - 12) more" : ""
+        let more = model.pendingDelete.count > 12 ? "\n" + tr("…and {0} more", model.pendingDelete.count - 12) : ""
         let note = model.deleteMode == .trash
-            ? "You can put them back from the Trash."
-            : "This cannot be undone: nothing goes to the Trash."
+            ? tr("You can put them back from the Trash.")
+            : tr("This cannot be undone: nothing goes to the Trash.")
         return note + "\n\n" + names + more
     }
 
@@ -262,7 +264,7 @@ struct ExplorerView: View {
                 .monospacedDigit().foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .trailing)
             Button { model.pendingDelete = [e.id] } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless).help(model.deleteMode.rawValue)
+                .buttonStyle(.borderless).help(model.deleteMode.label)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
     }

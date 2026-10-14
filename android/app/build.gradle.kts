@@ -12,8 +12,8 @@ android {
         applicationId = "com.opencleaner.android"
         minSdk = 30
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.3"
+        versionCode = 13
+        versionName = "1.4"
     }
 
     // Two APKs from one codebase: the phone app (Android 11+) and the TV app for Google TV / Android TV

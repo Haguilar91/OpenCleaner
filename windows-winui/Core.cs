@@ -32,7 +32,7 @@ namespace OpenCleaner
     {
         public static string Fmt(long bytes)
         {
-            if (bytes < 0) return "size unknown";
+            if (bytes < 0) return L.T("size unknown");
             string[] units = { "B", "KB", "MB", "GB", "TB" };
             double v = bytes;
             int i = 0;
@@ -219,15 +219,15 @@ namespace OpenCleaner
         public static List<Item> RunAll()
         {
             List<ScanDef> defs = new List<ScanDef>();
-            defs.Add(new ScanDef(UserTemp, "Temporary files", "Your temp folder"));
-            defs.Add(new ScanDef(WindowsTemp, "Temporary files", "Windows temp folder"));
-            defs.Add(new ScanDef(WindowsUpdate, "Windows", "Windows Update download cache"));
-            defs.Add(new ScanDef(DeliveryOpt, "Windows", "Delivery Optimization cache"));
-            defs.Add(new ScanDef(CrashDumps, "Windows", "Crash dumps and error reports"));
-            defs.Add(new ScanDef(RecycleBin, "Windows", "Recycle Bin"));
-            defs.Add(new ScanDef(BrowserCaches, "Browser caches", "Browser caches"));
-            defs.Add(new ScanDef(DevCaches, "Developer caches", "Package manager caches"));
-            defs.Add(new ScanDef(Steam, "Steam", "Steam leftovers"));
+            defs.Add(new ScanDef(UserTemp, L.T("Temporary files"), L.T("Your temp folder")));
+            defs.Add(new ScanDef(WindowsTemp, L.T("Temporary files"), L.T("Windows temp folder")));
+            defs.Add(new ScanDef(WindowsUpdate, "Windows", L.T("Windows Update download cache")));
+            defs.Add(new ScanDef(DeliveryOpt, "Windows", L.T("Delivery Optimization cache")));
+            defs.Add(new ScanDef(CrashDumps, "Windows", L.T("Crash dumps and error reports")));
+            defs.Add(new ScanDef(RecycleBin, "Windows", L.T("Recycle Bin")));
+            defs.Add(new ScanDef(BrowserCaches, L.T("Browser caches"), L.T("Browser caches")));
+            defs.Add(new ScanDef(DevCaches, L.T("Developer caches"), L.T("Package manager caches")));
+            defs.Add(new ScanDef(Steam, "Steam", L.T("Steam leftovers")));
 
             List<Item> all = new List<Item>();
             foreach (ScanDef d in defs)
@@ -238,7 +238,7 @@ namespace OpenCleaner
                     if (found.Count == 0)
                     {
                         Item e = new Item();
-                        e.Group = d.Group; e.Title = d.Label; e.Subtitle = "Nothing to clean";
+                        e.Group = d.Group; e.Title = d.Label; e.Subtitle = L.T("Nothing to clean");
                         e.Size = 0; e.Empty = true;
                         all.Add(e);
                     }
@@ -247,7 +247,7 @@ namespace OpenCleaner
                 catch (Exception ex)
                 {
                     Item e = new Item();
-                    e.Group = d.Group; e.Title = d.Label; e.Subtitle = "Scan failed: " + ex.Message;
+                    e.Group = d.Group; e.Title = d.Label; e.Subtitle = L.T("Scan failed: {0}", ex.Message);
                     e.Empty = true; e.Failed = true;
                     all.Add(e);
                 }
@@ -266,7 +266,7 @@ namespace OpenCleaner
                 {
                     if (!Util.Allowed(p, it.Roots))
                     {
-                        r.Error = "Refusing to delete outside the allowed folders: " + p;
+                        r.Error = L.T("Refusing to delete outside the allowed folders: {0}", p);
                         break;
                     }
                     r.Skipped += Util.DeleteTree(p);
@@ -298,7 +298,7 @@ namespace OpenCleaner
         {
             string temp = Path.GetTempPath().TrimEnd('\\');
             List<string> kids = Util.Children(temp);
-            Item it = Folder("Temporary files", "Your temp folder", temp + "  (files in use are skipped)",
+            Item it = Folder(L.T("Temporary files"), L.T("Your temp folder"), temp + "  " + L.T("(files in use are skipped)"),
                              temp, kids, true, false);
             return it.Size < 5L * 1024 * 1024 ? new List<Item>() : One(it);
         }
@@ -307,7 +307,7 @@ namespace OpenCleaner
         {
             string dir = Path.Combine(Win, "Temp");
             List<string> kids = Util.Children(dir);
-            Item it = Folder("Temporary files", "Windows temp folder", dir, dir, kids, true, true);
+            Item it = Folder(L.T("Temporary files"), L.T("Windows temp folder"), dir, dir, kids, true, true);
             return it.Size < 5L * 1024 * 1024 ? new List<Item>() : One(it);
         }
 
@@ -315,8 +315,8 @@ namespace OpenCleaner
         {
             string dir = Path.Combine(Win, "SoftwareDistribution\\Download");
             if (!Directory.Exists(dir)) return new List<Item>();
-            Item it = Folder("Windows", "Windows Update download cache",
-                             "Already-installed update files. Windows re-downloads what it needs.",
+            Item it = Folder("Windows", L.T("Windows Update download cache"),
+                             L.T("Already-installed update files. Windows re-downloads what it needs."),
                              dir, Util.Children(dir), true, true);
             if (it.Size < 20L * 1024 * 1024) return new List<Item>();
             it.Before = delegate { Util.RunQuiet("net.exe", "stop wuauserv"); Util.RunQuiet("net.exe", "stop bits"); };
@@ -329,8 +329,8 @@ namespace OpenCleaner
             string dir = Path.Combine(Win,
                 "ServiceProfiles\\NetworkService\\AppData\\Local\\Microsoft\\Windows\\DeliveryOptimization\\Cache");
             if (!Directory.Exists(dir)) return new List<Item>();
-            Item it = Folder("Windows", "Delivery Optimization cache",
-                             "Update files cached for sharing with other PCs", dir, Util.Children(dir), true, true);
+            Item it = Folder("Windows", L.T("Delivery Optimization cache"),
+                             L.T("Update files cached for sharing with other PCs"), dir, Util.Children(dir), true, true);
             return it.Size < 20L * 1024 * 1024 ? new List<Item>() : One(it);
         }
 
@@ -341,7 +341,7 @@ namespace OpenCleaner
             string user = Path.Combine(Local, "CrashDumps");
             if (Directory.Exists(user))
             {
-                Item it = Folder("Windows", "Your crash dumps", user, user, Util.Children(user), true, false);
+                Item it = Folder("Windows", L.T("Your crash dumps"), user, user, Util.Children(user), true, false);
                 if (it.Size > 1024 * 1024) list.Add(it);
             }
 
@@ -352,8 +352,8 @@ namespace OpenCleaner
                 Path.Combine(progData, "Microsoft\\Windows\\WER\\ReportQueue"),
             };
             Item sys = new Item();
-            sys.Group = "Windows"; sys.Title = "System crash dumps and error reports";
-            sys.Subtitle = "Minidumps and Windows Error Reporting archives";
+            sys.Group = "Windows"; sys.Title = L.T("System crash dumps and error reports");
+            sys.Subtitle = L.T("Minidumps and Windows Error Reporting archives");
             sys.NeedsAdmin = true; sys.Selected = true;
             foreach (string d in sysDirs)
             {
@@ -375,13 +375,13 @@ namespace OpenCleaner
             if (Native.SHQueryRecycleBin(null, ref info) != 0 || info.i64NumItems == 0)
                 return new List<Item>();
             Item it = new Item();
-            it.Group = "Windows"; it.Title = "Recycle Bin";
-            it.Subtitle = info.i64NumItems + " items. Permanently deletes everything in the Recycle Bin.";
+            it.Group = "Windows"; it.Title = L.T("Recycle Bin");
+            it.Subtitle = L.T("{0} items. Permanently deletes everything in the Recycle Bin.", info.i64NumItems);
             it.Size = info.i64Size;
             it.Action = delegate
             {
                 int hr = Native.SHEmptyRecycleBin(IntPtr.Zero, null, 0x7);
-                return hr == 0 ? null : "Could not empty the Recycle Bin (error " + hr + ")";
+                return hr == 0 ? null : L.T("Could not empty the Recycle Bin (error {0})", hr);
             };
             return One(it);
         }
@@ -431,9 +431,9 @@ namespace OpenCleaner
             if (size < CacheMin) return;
             bool running = Process.GetProcessesByName(process).Length > 0;
             Item it = new Item();
-            it.Group = "Browser caches"; it.Title = name + " cache";
-            it.Subtitle = running ? "Running now. Close it first, or in-use files are skipped."
-                                  : "Cached pages and images. Logins and history are kept.";
+            it.Group = L.T("Browser caches"); it.Title = L.T("{0} cache", name);
+            it.Subtitle = running ? L.T("Running now. Close it first, or in-use files are skipped.")
+                                  : L.T("Cached pages and images. Logins and history are kept.");
             it.Paths = paths; it.Roots.Add(root); it.Size = size;
             list.Add(it);
         }
@@ -505,7 +505,7 @@ namespace OpenCleaner
                 }
             }
             catch { return null; }   // offline or blocked: show the id, try again next time
-            v = name ?? ("App " + id + " (not in Steam store)");
+            v = name ?? L.T("App {0} (not in Steam store)", id);
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(cacheFile));
@@ -534,7 +534,7 @@ namespace OpenCleaner
                     if (m.Success) installed.Add(m.Groups[1].Value);
                 }
             }
-            string warn = missing ? " Some Steam library drives are not connected, so the game may live there." : "";
+            string warn = missing ? " " + L.T("Some Steam library drives are not connected, so the game may live there.") : "";
 
             // shader caches of games that are no longer installed
             foreach (string lib in libs)
@@ -550,8 +550,8 @@ namespace OpenCleaner
                     string name = StoreName(id);
                     Item it = new Item();
                     it.Group = "Steam";
-                    it.Title = "Shader cache: " + (name ?? ("app " + id));
-                    it.Subtitle = "Game not installed (app " + id + "). Steam rebuilds this if you reinstall." + warn;
+                    it.Title = L.T("Shader cache: {0}", name ?? ("app " + id));
+                    it.Subtitle = L.T("Game not installed (app {0}). Steam rebuilds this if you reinstall.", id) + warn;
                     it.Paths.Add(dir); it.Roots.Add(sc); it.Size = size; it.Selected = true;
                     list.Add(it);
                 }
@@ -567,17 +567,17 @@ namespace OpenCleaner
                 if (size >= CacheMin)
                 {
                     Item it = new Item();
-                    it.Group = "Steam"; it.Title = "Steam browser cache";
-                    it.Subtitle = running ? "Steam is running. Close it first, or in-use files are skipped."
-                                          : "Cache of the Steam store and community pages";
+                    it.Group = "Steam"; it.Title = L.T("Steam browser cache");
+                    it.Subtitle = running ? L.T("Steam is running. Close it first, or in-use files are skipped.")
+                                          : L.T("Cache of the Steam store and community pages");
                     it.Paths = kids; it.Roots.Add(html); it.Size = size;
                     list.Add(it);
                 }
             }
 
             Item part = new Item();
-            part.Group = "Steam"; part.Title = "Unfinished game downloads";
-            part.Subtitle = "Partial downloads. Don't clean while a download you want to resume is paused.";
+            part.Group = "Steam"; part.Title = L.T("Unfinished game downloads");
+            part.Subtitle = L.T("Partial downloads. Don't clean while a download you want to resume is paused.");
             foreach (string lib in libs)
             {
                 foreach (string sub in new string[] { "downloading", "temp" })
@@ -597,11 +597,11 @@ namespace OpenCleaner
         {
             List<Item> list = new List<Item>();
             string[][] spots = new string[][] {
-                new string[] { "npm cache", Path.Combine(Local, "npm-cache") },
-                new string[] { "pip cache", Path.Combine(Local, "pip\\Cache") },
-                new string[] { "Yarn cache", Path.Combine(Local, "Yarn\\Cache") },
-                new string[] { "NuGet cache", Path.Combine(Local, "NuGet\\v3-cache") },
-                new string[] { "Gradle caches", Path.Combine(Profile, ".gradle\\caches") },
+                new string[] { L.T("{0} cache", "npm"), Path.Combine(Local, "npm-cache") },
+                new string[] { L.T("{0} cache", "pip"), Path.Combine(Local, "pip\\Cache") },
+                new string[] { L.T("{0} cache", "Yarn"), Path.Combine(Local, "Yarn\\Cache") },
+                new string[] { L.T("{0} cache", "NuGet"), Path.Combine(Local, "NuGet\\v3-cache") },
+                new string[] { L.T("{0} cache", "Gradle"), Path.Combine(Profile, ".gradle\\caches") },
             };
             foreach (string[] s in spots)
             {
@@ -610,8 +610,8 @@ namespace OpenCleaner
                 long size = Util.SizeOfAll(kids);
                 if (size < CacheMin) continue;
                 Item it = new Item();
-                it.Group = "Developer caches"; it.Title = s[0];
-                it.Subtitle = "Re-downloaded automatically when needed";
+                it.Group = L.T("Developer caches"); it.Title = s[0];
+                it.Subtitle = L.T("Re-downloaded automatically when needed");
                 it.Paths = kids; it.Roots.Add(s[1]); it.Size = size;
                 list.Add(it);
             }

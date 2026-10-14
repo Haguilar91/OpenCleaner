@@ -1,12 +1,15 @@
 #!/bin/sh
 # Screenshots for docs/screenshots: the real window under Xvfb with a sample home folder (no real user files).
-#   tests/docs_shots.sh [name]     name: a test image (default arch-x86); PNGs land in tests/out/docs-*.png
+#   tests/docs_shots.sh [name] [lang]   name: a test image (default arch-x86); lang: es for Spanish
+#   PNGs land in tests/out/docs-*.png (docs-es-*.png with a language)
 cd "$(dirname "$0")" || exit 1
 NAME="${1:-arch-x86}"
+LANG_CODE="${2:-}"
+TAG=docs${LANG_CODE:+-$LANG_CODE}
 case "$NAME" in fedora|rocky) PM=dnf ;; arch|arch-x86) PM=pacman ;; *) PM=apt ;; esac
 VOL=ro; OUTVOL=""; command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" = Enforcing ] && VOL=ro,z && OUTVOL=":z"
 mkdir -p out
-docker run --rm -v "$(cd ../.. && pwd):/src:$VOL" -v "$(pwd)/out:/out$OUTVOL" -e TAG="docs" -e SHOT_ROOT=/root \
+docker run --rm -v "$(cd ../.. && pwd):/src:$VOL" -v "$(pwd)/out:/out$OUTVOL" -e TAG="$TAG" -e LANGUAGE="$LANG_CODE" -e SHOT_ROOT=/root \
   "opencleaner-test:$NAME" sh -c '
     mkdir -p /root/Videos/Holidays /root/Pictures/2025 /root/Downloads /root/Music /root/Documents /root/.cache/thumbnails
     head -c 380000000 /dev/zero > /root/Videos/Holidays/beach-4k.mp4

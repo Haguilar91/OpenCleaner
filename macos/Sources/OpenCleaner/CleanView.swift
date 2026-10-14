@@ -36,7 +36,7 @@ struct CleanView: View {
             HStack {
                 Text(summary).foregroundStyle(.secondary)
                 Spacer()
-                Button("Clean selected") { store.confirming = true }
+                Button(tr("Clean selected")) { store.confirming = true }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(store.selected.isEmpty || store.busy)
@@ -46,17 +46,17 @@ struct CleanView: View {
             .background(.bar)
         }
         .sheet(item: $store.reviewing) { ReviewSheet(item: $0) }
-        .alert("Delete selected items?", isPresented: $store.confirming) {
-            Button("Clean", role: .destructive) { Task { await store.cleanSelected() } }
-            Button("Cancel", role: .cancel) {}
+        .alert(tr("Delete selected items?"), isPresented: $store.confirming) {
+            Button(tr("Clean"), role: .destructive) { Task { await store.cleanSelected() } }
+            Button(tr("Cancel"), role: .cancel) {}
         } message: {
-            Text("This cannot be undone.\n\n" + store.selected.map {
+            Text(tr("This cannot be undone.") + "\n\n" + store.selected.map {
                 "\u{2022} \($0.title) (\(fmt($0.size)))" + ($0.note.isEmpty ? "" : "\n   \($0.note)")
             }.joined(separator: "\n"))
         }
         .alert("OpenCleaner", isPresented: Binding(get: { store.message != nil },
                                                    set: { if !$0 { store.message = nil } })) {
-            Button("OK") { store.message = nil }
+            Button(tr("OK")) { store.message = nil }
         } message: { Text(store.message ?? "") }
     }
 
@@ -78,7 +78,7 @@ struct CleanView: View {
     private var summary: String {
         let sel = store.selected
         let known = sel.reduce(Int64(0)) { $0 + ($1.size ?? 0) }
-        return "\(sel.count) selected \u{00B7} \(fmt(known))" + (sel.contains { $0.size == nil } ? " + more" : "")
+        return tr("{0} selected · {1}", sel.count, fmt(known)) + (sel.contains { $0.size == nil } ? " " + tr("+ more") : "")
     }
 
     @ViewBuilder private func row(_ item: CleanItem) -> some View {
@@ -103,13 +103,13 @@ struct CleanView: View {
             }
             Spacer()
             if item.empty {
-                Text(item.failed ? "Scan failed" : "Clean \u{2713}")
+                Text(item.failed ? tr("Scan failed") : tr("status|Clean") + " \u{2713}")
                     .foregroundStyle(item.failed ? Color.red : Color.green)
             } else {
                 Text(fmt(item.size)).foregroundStyle(.secondary).monospacedDigit()
                 if !item.paths.isEmpty {
                     Button { store.reviewing = item } label: { Image(systemName: "eye") }
-                        .buttonStyle(.borderless).help("Review files")
+                        .buttonStyle(.borderless).help(tr("Review files"))
                 }
             }
         }

@@ -13,6 +13,7 @@ struct AppInfo: Identifiable {
 enum AppSort: String, CaseIterable, Identifiable {
     case size = "Biggest first", leastUsed = "Least recently used", recent = "Recently used", name = "Name"
     var id: String { rawValue }
+    var label: String { tr(rawValue) }
 }
 
 /// One thing the uninstall would delete permanently: the app itself or a leftover file or folder.
@@ -41,8 +42,8 @@ final class AppsModel: ObservableObject {
     var total: Int64 { apps.reduce(0) { $0 + ($1.size ?? 0) } }
 
     var statusText: String {
-        var s = loading ? "Measuring \(percent)% (\(measured) of \(apps.count) apps) \u{00B7} " : ""
-        s += "\(apps.count) apps \u{00B7} \(fmt(total))"
+        var s = loading ? tr("Measuring {0}% ({1} of {2} apps)", percent, measured, apps.count) + " \u{00B7} " : ""
+        s += tr("{0} apps · {1}", apps.count, fmt(total))
         return s
     }
 
@@ -116,7 +117,7 @@ final class AppsModel: ObservableObject {
     /// Builds the review list: the app, then files it left in ~/Library.
     func startUninstall(_ app: AppInfo) {
         if !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty {
-            message = "\(app.name) is running. Quit it first, then try again."
+            message = tr("{0} is running. Quit it first, then try again.", app.name)
             return
         }
         uninstalling = app
@@ -180,7 +181,7 @@ final class AppsModel: ObservableObject {
             let p = item.id.standardizedFileURL.path
             let okApp = item.id == app.id && apps.contains { p.hasPrefix($0) }
             let okLeft = item.id != app.id && p.hasPrefix(home + "/Library/")
-            guard okApp || okLeft else { failed.append("\(item.title): outside the allowed folders"); continue }
+            guard okApp || okLeft else { failed.append("\(item.title): " + tr("outside the allowed folders")); continue }
             do { try FileManager.default.removeItem(at: item.id) }   // removes a symlink itself, not its target
             catch where Self.needsAdmin(error) { needAdmin.append(item) }
             catch { failed.append("\(item.title): \(error.localizedDescription)") }
@@ -191,8 +192,8 @@ final class AppsModel: ObservableObject {
             failed += needAdmin.map { "\($0.title): \(err)" }
         }
         message = failed.isEmpty
-            ? "\(app.name) was deleted permanently (\(fmt(todo.reduce(0) { $0 + $1.size })) freed)."
-            : "Some items could not be deleted:\n" + failed.joined(separator: "\n")
+            ? tr("{0} was deleted permanently ({1} freed).", app.name, fmt(todo.reduce(0) { $0 + $1.size }))
+            : tr("Some items could not be deleted:") + "\n" + failed.joined(separator: "\n")
         load()
     }
 
@@ -214,7 +215,7 @@ final class AppsModel: ObservableObject {
         var err: NSDictionary?
         NSAppleScript(source: source)?.executeAndReturnError(&err)
         guard let err else { return nil }
-        return (err[NSAppleScript.errorMessage] as? String) ?? "cancelled at the administrator prompt"
+        return (err[NSAppleScript.errorMessage] as? String) ?? tr("cancelled at the administrator prompt")
     }
 }
 
@@ -227,15 +228,15 @@ struct AppsView: View {
             HStack(spacing: 10) {
                 Text(model.statusText).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Picker("Sort", selection: $model.sort) {
-                    ForEach(AppSort.allCases) { Text($0.rawValue).tag($0) }
+                Picker(tr("Sort"), selection: $model.sort) {
+                    ForEach(AppSort.allCases) { Text($0.label).tag($0) }
                 }
-                .pickerStyle(.menu).frame(width: 190)
-                Picker("Show", selection: $model.topN) {
-                    Text("All").tag(0)
-                    ForEach([5, 10, 50, 100], id: \.self) { Text("Top \($0)").tag($0) }
+                .pickerStyle(.menu).labelsHidden().frame(width: 170).help(tr("Sort by size, last use or name"))
+                Picker(tr("Show"), selection: $model.topN) {
+                    Text(tr("All")).tag(0)
+                    ForEach([5, 10, 50, 100], id: \.self) { Text(tr("Top {0}", $0)).tag($0) }
                 }
-                .pickerStyle(.menu).frame(width: 100)
+                .pickerStyle(.menu).labelsHidden().frame(width: 120).help(tr("Show only the first items of the sort"))
             }
             .padding(.horizontal, 28).padding(.vertical, 8)
             if model.loading {
@@ -258,13 +259,13 @@ struct AppsView: View {
         .sheet(item: $model.uninstalling) { _ in UninstallSheet(model: model) }
         .alert("OpenCleaner", isPresented: Binding(get: { model.message != nil },
                                                    set: { if !$0 { model.message = nil } })) {
-            Button("OK") { model.message = nil; store.updateFree() }
+            Button(tr("OK")) { model.message = nil; store.updateFree() }
         } message: { Text(model.message ?? "") }
     }
 
     private func lastUsedText(_ d: Date?) -> String {
-        guard let d else { return "Last used: unknown" }
-        return "Last used " + RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date())
+        guard let d else { return tr("Last used: unknown") }
+        return tr("Last used {0}", RelativeDateTimeFormatter().localizedString(for: d, relativeTo: Date()))
     }
 
     @ViewBuilder private func row(_ a: AppInfo) -> some View {
@@ -283,7 +284,7 @@ struct AppsView: View {
                 .monospacedDigit().foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .trailing)
             Button { model.startUninstall(a) } label: { Image(systemName: "trash") }
-                .buttonStyle(.borderless).help("Uninstall\u{2026}")
+                .buttonStyle(.borderless).help(tr("Uninstall…"))
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
     }
@@ -295,10 +296,10 @@ struct UninstallSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Uninstall \(model.uninstalling?.name ?? "")?").font(.headline)
-            Label("Ticked items are deleted permanently. They do not go to the Trash, so this cannot be undone.", systemImage: "exclamationmark.triangle.fill")
+            Text(tr("Uninstall {0}?", model.uninstalling?.name ?? "")).font(.headline)
+            Label(tr("Ticked items are deleted permanently. They do not go to the Trash, so this cannot be undone."), systemImage: "exclamationmark.triangle.fill")
                 .font(.callout).foregroundStyle(.red)
-            Text("Items that may hold your data (Application Support, containers) start unticked. Apps installed for all users (like Microsoft Office) ask for your administrator password.")
+            Text(tr("Items that may hold your data (Application Support, containers) start unticked. Apps installed for all users (like Microsoft Office) ask for your administrator password."))
                 .font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 VStack(spacing: 0) {
@@ -317,18 +318,18 @@ struct UninstallSheet: View {
                         Divider()
                     }
                     if model.planBusy {
-                        HStack { ProgressView().controlSize(.small); Text("Looking for leftover files\u{2026}").font(.caption) }
+                        HStack { ProgressView().controlSize(.small); Text(tr("Looking for leftover files…")).font(.caption) }
                             .padding(.top, 8)
                     }
                 }
             }
             .frame(height: 300)
             HStack {
-                Text("\(model.plan.filter(\.selected).count) selected \u{00B7} \(fmt(model.planSelectedSize))")
+                Text(tr("{0} selected · {1}", model.plan.filter(\.selected).count, fmt(model.planSelectedSize)))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Cancel") { model.uninstalling = nil }.keyboardShortcut(.cancelAction)
-                Button("Delete permanently", role: .destructive) { model.confirmUninstall() }
+                Button(tr("Cancel")) { model.uninstalling = nil }.keyboardShortcut(.cancelAction)
+                Button(tr("Delete permanently"), role: .destructive) { model.confirmUninstall() }
                     .disabled(model.planBusy || model.plan.allSatisfy { !$0.selected })
             }
         }

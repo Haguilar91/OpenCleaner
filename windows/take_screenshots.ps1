@@ -1,7 +1,8 @@
 # Takes the README screenshots of both Windows apps (WinUI and WinForms):
 #   windows-<app>-clean.png, -disk.png, -map.png, -apps.png
 # Run it on Windows from a folder that holds the "windows" and "windows-winui" source folders:
-#   powershell -ExecutionPolicy Bypass -File take_screenshots.ps1
+#   powershell -ExecutionPolicy Bypass -File take_screenshots.ps1 [-Lang es]
+# -Lang shows the apps in that language (files are then named windows-<app>-<lang>-*.png).
 # It copies the sources to %TEMP% and builds there (fast local drive), makes a sample folder for
 # Disk usage (so no real file names show up), opens each page with the --tab/--root/--map launch
 # options and saves just the window. Do not touch the mouse or keyboard while it runs.
@@ -9,6 +10,7 @@ param(
     [string]$Out = (Join-Path $PSScriptRoot "out"),
     [ValidateSet("both", "winui", "winforms")][string]$App = "both",
     [switch]$SkipBuild,
+    [string]$Lang = "",
     [int]$CleanWait = 25,   # seconds: the Clean page scans on open
     [int]$DiskWait = 8,
     [int]$AppsWait = 30     # the Apps page measures every program folder
@@ -125,10 +127,12 @@ foreach ($a in $apps) {
     $name = $a[0]; $exe = $a[1]
     if (-not (Test-Path $exe)) { throw "Not built: $exe (run without -SkipBuild)" }
     Write-Host "Screenshots: $name"
-    Take $exe (Join-Path $Out "windows-$name-clean.png") "--tab clean" $CleanWait
-    Take $exe (Join-Path $Out "windows-$name-disk.png") "--tab disk --root `"$sample`"" $DiskWait
-    Take $exe (Join-Path $Out "windows-$name-map.png") "--tab disk --root `"$sample`" --map" $DiskWait
-    Take $exe (Join-Path $Out "windows-$name-apps.png") "--tab apps" $AppsWait
+    $tag = if ($Lang) { "windows-$name-$Lang" } else { "windows-$name" }
+    $extra = if ($Lang) { " --lang $Lang" } else { "" }
+    Take $exe (Join-Path $Out "$tag-clean.png") ("--tab clean" + $extra) $CleanWait
+    Take $exe (Join-Path $Out "$tag-disk.png") ("--tab disk --root `"$sample`"" + $extra) $DiskWait
+    Take $exe (Join-Path $Out "$tag-map.png") ("--tab disk --root `"$sample`" --map" + $extra) $DiskWait
+    Take $exe (Join-Path $Out "$tag-apps.png") ("--tab apps" + $extra) $AppsWait
 }
 Write-Host ""
 Write-Host "Done. Screenshots are in $Out"

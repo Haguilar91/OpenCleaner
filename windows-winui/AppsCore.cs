@@ -215,7 +215,7 @@ static class Apps
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)
         };
-        string[] labels = { "AppData\\Roaming (settings)", "AppData\\Local (cache and data)", "ProgramData" };
+        string[] labels = { L.T("AppData\\Roaming (settings)"), L.T("AppData\\Local (cache and data)"), "ProgramData" };
         for (int i = 0; i < roots.Length; i++)
         {
             List<string> candidates = new List<string>();
@@ -266,13 +266,13 @@ static class Apps
             {
                 p.WaitForExit();
                 if (p.ExitCode != 0 && p.ExitCode != 3010 && p.ExitCode != 1641)
-                    return "The uninstaller finished with code " + p.ExitCode + " (cancelled or failed).";
+                    return L.T("The uninstaller finished with code {0} (cancelled or failed).", p.ExitCode);
             }
             return null;
         }
         catch (Win32Exception ex)
         {
-            if (ex.NativeErrorCode == 1223) return "You cancelled the administrator prompt, so nothing was uninstalled.";
+            if (ex.NativeErrorCode == 1223) return L.T("You cancelled the administrator prompt, so nothing was uninstalled.");
             return ex.Message;
         }
         catch (Exception ex) { return ex.Message; }
@@ -313,12 +313,12 @@ static class Apps
             psi.WindowStyle = ProcessWindowStyle.Hidden;
             using (Process p = Process.Start(psi)) p.WaitForExit();
             foreach (string p in paths)
-                if (Directory.Exists(p)) return "Could not delete " + p;
+                if (Directory.Exists(p)) return L.T("Could not delete {0}", p);
             return null;
         }
         catch (Win32Exception ex)
         {
-            if (ex.NativeErrorCode == 1223) return "You cancelled the administrator prompt; those folders were left.";
+            if (ex.NativeErrorCode == 1223) return L.T("You cancelled the administrator prompt; those folders were left.");
             return ex.Message;
         }
         catch (Exception ex) { return ex.Message; }
@@ -356,7 +356,7 @@ static class Apps
                 || (a.InstallLocation.Length > 0 && full.Equals(rr, StringComparison.OrdinalIgnoreCase)
                     && rr.Equals(a.InstallLocation.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))) ok = true;
         }
-        if (!ok) return "Refused: outside the allowed folders";
+        if (!ok) return L.T("Refused: outside the allowed folders");
         return null;
     }
 }

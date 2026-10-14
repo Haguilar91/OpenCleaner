@@ -73,7 +73,7 @@ static class Updater
         string json;
         using (WebClient wc = Client()) json = wc.DownloadString(Api);
         Match tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-        if (!tag.Success) throw new InvalidOperationException("No release found on GitHub.");
+        if (!tag.Success) throw new InvalidOperationException(L.T("No release found on GitHub."));
         ReleaseInfo r = new ReleaseInfo();
         r.Version = tag.Groups[1].Value.TrimStart('v', 'V');
         r.Page = "https://github.com/Haguilar91/OpenCleaner/releases/tag/" + tag.Groups[1].Value;
@@ -93,9 +93,9 @@ static class Updater
     {
         string name = null;
         foreach (string n in r.Assets.Keys) if (n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) name = n;
-        if (name == null) throw new InvalidOperationException("This release has no " + suffix.Trim('-') + " download.");
+        if (name == null) throw new InvalidOperationException(L.T("This release has no {0} download.", suffix.Trim('-')));
         if (!r.Assets.ContainsKey("SHA256SUMS.txt"))
-            throw new InvalidOperationException("This release has no checksums, so it was not installed.");
+            throw new InvalidOperationException(L.T("This release has no checksums, so it was not installed."));
         string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OpenCleaner-update");
         Directory.CreateDirectory(dir);
         string file = System.IO.Path.Combine(dir, name);
@@ -113,7 +113,7 @@ static class Updater
         foreach (string line in sums.Split('\n'))
             if (line.Trim().StartsWith(hex) && line.Trim().EndsWith(name)) return file;
         File.Delete(file);
-        throw new InvalidOperationException("The download did not match the release checksum, so it was not installed.");
+        throw new InvalidOperationException(L.T("The download did not match the release checksum, so it was not installed."));
     }
 }
 

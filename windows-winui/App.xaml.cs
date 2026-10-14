@@ -17,6 +17,14 @@ public partial class App : Application
     {
         try
         {
+            // --lang es: show the app in another language than Windows' (screenshots, testing)
+            string[] argv = Environment.GetCommandLineArgs();
+            int li = Array.IndexOf(argv, "--lang");
+            if (li >= 0 && li + 1 < argv.Length)
+            {
+                try { System.Globalization.CultureInfo.CurrentUICulture = new System.Globalization.CultureInfo(argv[li + 1]); }
+                catch (System.Globalization.CultureNotFoundException) { }
+            }
             window = new MainWindow();
             window.Activate();
         }

@@ -116,21 +116,21 @@ fun PermissionScreen(onGranted: () -> Unit = {}) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("OpenCleaner needs file access", style = MaterialTheme.typography.headlineSmall)
+        Text(tr("OpenCleaner needs file access"), style = MaterialTheme.typography.headlineSmall)
         Text(
-            "\nTo find and delete junk files, Android requires you to allow " +
+            "\n" + tr("To find and delete junk files, Android requires you to allow " +
                 "\"All files access\". The app only deletes items you tick and confirm, " +
-                "and never touches other apps' private data.\n",
+                "and never touches other apps' private data.") + "\n",
             style = MaterialTheme.typography.bodyMedium,
         )
         Button(modifier = Modifier.focusRing(), onClick = {
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) legacy.launch(Access.legacyStorage)
             else if (!Access.openAllFilesSettings(ctx)) noSettings = true
-        }) { Text(if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) "Allow access" else "Open settings") }
+        }) { Text(if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) tr("Allow access") else tr("Open settings")) }
         if (noSettings) {
-            Text("\nThis device has no \"All files access\" settings page (common on TVs). Grant it once from a " +
-                "computer with adb:\n\n" + Access.adbCommand(ctx, "MANAGE_EXTERNAL_STORAGE") +
-                "\n\nthen reopen OpenCleaner.", style = MaterialTheme.typography.bodyMedium)
+            Text("\n" + tr("This device has no \"All files access\" settings page (common on TVs). Grant it once from a " +
+                "computer with adb:") + "\n\n" + Access.adbCommand(ctx, "MANAGE_EXTERNAL_STORAGE") +
+                "\n\n" + tr("then reopen OpenCleaner."), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -158,13 +158,13 @@ fun CleanScreen(vm: CleanVm) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                IconButton(onClick = { vm.scan() }, enabled = !vm.busy) { Ico(R.drawable.ic_refresh, "Rescan") }
+                IconButton(onClick = { vm.scan() }, enabled = !vm.busy) { Ico(R.drawable.ic_refresh, tr("Rescan")) }
                 val known = vm.chosen.sumOf { it.size ?: 0 }
-                Text("${vm.chosen.size} selected · ${fmt(known)}",
+                Text(tr("{0} selected · {1}", vm.chosen.size, fmt(known)),
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(onClick = { vm.confirming = true },
-                    enabled = vm.chosen.isNotEmpty() && !vm.busy) { Text("Clean") }
+                    enabled = vm.chosen.isNotEmpty() && !vm.busy) { Text(tr("Clean")) }
             }
         }
         if (vm.busy) {
@@ -179,20 +179,20 @@ fun CleanScreen(vm: CleanVm) {
     if (vm.confirming) {
         AlertDialog(
             onDismissRequest = { vm.confirming = false },
-            title = { Text("Delete selected items?") },
+            title = { Text(tr("Delete selected items?")) },
             text = {
-                Text("This cannot be undone.\n\n" +
+                Text(tr("This cannot be undone.") + "\n\n" +
                     vm.chosen.joinToString("\n") { "• ${it.title} (${fmt(it.size)})" })
             },
-            confirmButton = { TextButton(onClick = { vm.confirming = false; vm.clean() }) { Text("Clean") } },
-            dismissButton = { TextButton(onClick = { vm.confirming = false }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { vm.confirming = false; vm.clean() }) { Text(tr("Clean")) } },
+            dismissButton = { TextButton(onClick = { vm.confirming = false }) { Text(tr("Cancel")) } },
         )
     }
     vm.message?.let { msg ->
         AlertDialog(
             onDismissRequest = { vm.message = null },
             text = { Text(msg) },
-            confirmButton = { TextButton(onClick = { vm.message = null }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { vm.message = null }) { Text(tr("OK")) } },
         )
     }
 }
@@ -217,10 +217,10 @@ private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                 overflow = TextOverflow.Ellipsis)
         }
-        if (item.empty) { Ico(R.drawable.ic_check, tint = Green, size = 16); Text(" Clean", color = Green) }
+        if (item.empty) { Ico(R.drawable.ic_check, tint = Green, size = 16); Text(" " + tr("status|Clean"), color = Green) }
         else {
             Text(fmt(item.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconButton(onClick = onReview) { Ico(R.drawable.ic_review, "Review files") }
+            IconButton(onClick = onReview) { Ico(R.drawable.ic_review, tr("Review files")) }
         }
     }
 }
@@ -228,8 +228,10 @@ private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
 // ---------------------------------------------------------------- storage browser
 private data class Entry(val file: File, val size: Long?, val modified: Long = file.lastModified())
 
-private enum class SortMode(val label: String) {
-    Biggest("Biggest first"), Oldest("Oldest first"), Newest("Newest first"), Type("File type")
+private enum class SortMode(private val en: String) {
+    Biggest("Biggest first"), Oldest("Oldest first"), Newest("Newest first"), Type("File type");
+
+    val label: String get() = tr(en)
 }
 
 private val TOP_CHOICES = listOf(0, 5, 10, 50, 100)   // 0 = all
@@ -310,13 +312,13 @@ fun StorageScreen(onChanged: () -> Unit) {
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { path = path.parentFile ?: root }, enabled = path != root) { Ico(R.drawable.ic_up, "Up") }
-            Text(path.path.removePrefix(root.path).ifEmpty { "/" }.let { "Internal storage$it" },
+            IconButton(onClick = { path = path.parentFile ?: root }, enabled = path != root) { Ico(R.drawable.ic_up, tr("Up")) }
+            Text(path.path.removePrefix(root.path).ifEmpty { "/" }.let { tr("Internal storage") + it },
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text((if (measuring) "Measuring $percent% ($measured of ${entries.size} items) · " else "") +
-            "Total ${fmt(total)}", style = MaterialTheme.typography.bodySmall,
+        Text((if (measuring) tr("Measuring {0}% ({1} of {2} items)", percent, measured, entries.size) + " · " else "") +
+            tr("Total {0}", fmt(total)), style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (measuring) {
@@ -327,7 +329,7 @@ fun StorageScreen(onChanged: () -> Unit) {
             var sortOpen by remember { mutableStateOf(false) }
             var topOpen by remember { mutableStateOf(false) }
             Box {
-                TextButton(onClick = { sortOpen = true }) { Text("Sort: ${sort.label} ▾") }
+                TextButton(onClick = { sortOpen = true }) { Text(tr("Sort: {0}", sort.label) + " ▾") }
                 DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
                     SortMode.values().forEach { m ->
                         DropdownMenuItem(text = { Text(m.label) }, onClick = { sort = m; sortOpen = false })
@@ -335,17 +337,17 @@ fun StorageScreen(onChanged: () -> Unit) {
                 }
             }
             Box {
-                TextButton(onClick = { topOpen = true }) { Text("Show: ${if (top == 0) "All" else "Top $top"} ▾") }
+                TextButton(onClick = { topOpen = true }) { Text(tr("Show: {0}", if (top == 0) tr("All") else tr("Top {0}", top)) + " ▾") }
                 DropdownMenu(expanded = topOpen, onDismissRequest = { topOpen = false }) {
                     TOP_CHOICES.forEach { n ->
-                        DropdownMenuItem(text = { Text(if (n == 0) "All" else "Top $n") },
+                        DropdownMenuItem(text = { Text(if (n == 0) tr("All") else tr("Top {0}", n)) },
                             onClick = { top = n; topOpen = false })
                     }
                 }
             }
             Spacer(Modifier.weight(1f))
             IconButton(modifier = Modifier.focusRing(), onClick = { mapMode = !mapMode }) {
-                Ico(if (mapMode) R.drawable.ic_list else R.drawable.ic_map, if (mapMode) "List view" else "Map view")
+                Ico(if (mapMode) R.drawable.ic_list else R.drawable.ic_map, if (mapMode) tr("List view") else tr("Map view"))
             }
         }
         HorizontalDivider()
@@ -374,7 +376,7 @@ fun StorageScreen(onChanged: () -> Unit) {
                             overflow = TextOverflow.Ellipsis)
                         Text(if (e.size == null) "…" else fmt(e.size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        IconButton(onClick = { toDelete = listOf(e.file) }) { Ico(R.drawable.ic_delete, "Delete") }
+                        IconButton(onClick = { toDelete = listOf(e.file) }) { Ico(R.drawable.ic_delete, tr("Delete")) }
                     }
                     LinearProgressIndicator(
                         progress = { (e.size ?: 0).toFloat() / maxSize },
@@ -390,10 +392,10 @@ fun StorageScreen(onChanged: () -> Unit) {
             val picked = entries.filter { it.file.path in selected }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Text("${picked.size} selected · ${fmt(picked.sumOf { it.size ?: 0 })}",
+                Text(tr("{0} selected · {1}", picked.size, fmt(picked.sumOf { it.size ?: 0 })),
                     modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { selected = emptySet() }) { Text("Clear") }
-                Button(onClick = { toDelete = picked.map { it.file } }) { Text("Delete selected") }
+                TextButton(onClick = { selected = emptySet() }) { Text(tr("Clear")) }
+                Button(onClick = { toDelete = picked.map { it.file } }) { Text(tr("Delete selected")) }
             }
         }
     }
@@ -406,11 +408,11 @@ fun StorageScreen(onChanged: () -> Unit) {
         val files = toDelete
         AlertDialog(
             onDismissRequest = { toDelete = emptyList() },
-            title = { Text(if (files.size == 1) "Delete \"${files[0].name}\" permanently?" else "Delete ${files.size} items permanently?") },
+            title = { Text(if (files.size == 1) tr("Delete \"{0}\" permanently?", files[0].name) else tr("Delete {0} items permanently?", files.size)) },
             text = {
-                Text("Android has no trash for files, so this cannot be undone.\n\n" +
+                Text(tr("Android has no trash for files, so this cannot be undone.") + "\n\n" +
                     files.take(10).joinToString("\n") { "• " + it.name } +
-                    if (files.size > 10) "\n…and ${files.size - 10} more" else "")
+                    if (files.size > 10) "\n" + tr("…and {0} more", files.size - 10) else "")
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -419,28 +421,28 @@ fun StorageScreen(onChanged: () -> Unit) {
                         val failed = withContext(Dispatchers.IO) {
                             files.filterNot { Scanners.allowed(it, ctx) && it.deleteRecursively() }
                         }
-                        if (failed.isNotEmpty()) error = "Could not delete " + failed.joinToString { it.name }
+                        if (failed.isNotEmpty()) error = tr("Could not delete {0}", failed.joinToString { it.name })
                         selected = selected - files.map { it.path }.toSet()
                         reload++
                         onChanged()
                     }
-                }) { Text("Delete") }
+                }) { Text(tr("Delete")) }
             },
-            dismissButton = { TextButton(onClick = { toDelete = emptyList() }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { toDelete = emptyList() }) { Text(tr("Cancel")) } },
         )
     }
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = { error = null },
             text = { Text(msg) },
-            confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { error = null }) { Text(tr("OK")) } },
         )
     }
 }
 
 /** Treemap of the current folder: each item is a block sized by its space, colored by type.
  *  Tap opens a folder or previews a file; long-press selects it for "Delete selected". */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: FocusRequester,
                        onToggle: (Entry) -> Unit, onDelete: (Entry) -> Unit, onOpen: (Entry) -> Unit) {
@@ -457,17 +459,17 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
             confirmButton = {
                 Row {
                     TextButton(modifier = Modifier.focusRing(), onClick = { actions = null; onOpen(e) }) {
-                        Text(if (e.file.isDirectory) "Open" else "Preview")
+                        Text(if (e.file.isDirectory) tr("Open") else tr("Preview"))
                     }
                     TextButton(modifier = Modifier.focusRing(), onClick = { actions = null; onToggle(e) }) {
-                        Text(if (e.file.path in selected) "Deselect" else "Select")
+                        Text(if (e.file.path in selected) tr("Deselect") else tr("Select"))
                     }
                     TextButton(modifier = Modifier.focusRing(), onClick = { actions = null; onDelete(e) }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                        Text(tr("Delete"), color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
-            dismissButton = { TextButton(modifier = Modifier.focusRing(), onClick = { actions = null }) { Text("Close") } },
+            dismissButton = { TextButton(modifier = Modifier.focusRing(), onClick = { actions = null }) { Text(tr("Close")) } },
         )
     }
     Column(Modifier.fillMaxSize().padding(8.dp)) {
@@ -479,7 +481,7 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
                 Treemap.layout(shown.map { it.size!!.toDouble() }, wPx, hPx)
             }
             if (shown.isEmpty()) {
-                Text("Nothing to show", Modifier.align(Alignment.Center),
+                Text(tr("Nothing to show"), Modifier.align(Alignment.Center),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             shown.forEachIndexed { i, e ->
@@ -500,7 +502,7 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
                         .padding(4.dp)
                 ) {
                     if (e.file.path in selected && w > 24.dp && h > 24.dp) {
-                        Box(Modifier.align(Alignment.TopEnd)) { Ico(R.drawable.ic_check, "Selected", Color.White, size = 16) }
+                        Box(Modifier.align(Alignment.TopEnd)) { Ico(R.drawable.ic_check, tr("Selected"), Color.White, size = 16) }
                     }
                     if (w > 56.dp && h > 34.dp) {
                         Column {
@@ -513,10 +515,12 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
                 }
             }
         }
-        Text(if (BuildConfig.IS_TV) "Press OK on a block to open, select or delete it" else "Long-press a block to select it",
+        Text(if (BuildConfig.IS_TV) tr("Press OK on a block to open, select or delete it") else tr("Long-press a block to select it"),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // wraps onto a second line when the labels do not fit (narrow phones, longer languages)
+        androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Kind.values().forEach { k ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(9.dp).clip(RoundedCornerShape(2.dp)).background(k.color))
@@ -532,8 +536,10 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
 private data class AppRow(val label: String, val pkg: String, val total: Long, val cache: Long, val data: Long,
                           val lastUsed: Long = 0)
 
-private enum class AppSort(val label: String) {
-    Biggest("Biggest first"), LeastUsed("Least recently used"), Recent("Recently used"), Name("Name")
+private enum class AppSort(private val en: String) {
+    Biggest("Biggest first"), LeastUsed("Least recently used"), Recent("Recently used"), Name("Name");
+
+    val label: String get() = tr(en)
 }
 
 /** Apps in the chosen order, cut to the top N (0 = all). Never-used apps (0) count as the oldest. */
@@ -548,8 +554,9 @@ private fun arrangeApps(apps: List<AppRow>, sort: AppSort, top: Int): List<AppRo
 }
 
 private fun lastUsedText(ts: Long): String =
-    if (ts <= 0) "last used: unknown"
-    else "last used " + DateUtils.getRelativeTimeSpanString(ts, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS)
+    if (ts <= 0) tr("last used: unknown")
+    else tr("last used {0}", DateUtils.getRelativeTimeSpanString(ts, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS)
+        .toString().replaceFirstChar { it.lowercase() })
 
 private fun hasUsageAccess(ctx: Context): Boolean = Access.hasUsageAccess(ctx)
 
@@ -619,17 +626,17 @@ fun AppsScreen() {
     if (!access) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Allow usage access", style = MaterialTheme.typography.titleMedium)
-            Text("\nAndroid only shares each app's size if you allow \"Usage access\". " +
-                "OpenCleaner only reads sizes. It cannot see what you do in apps.\n")
+            Text(tr("Allow usage access"), style = MaterialTheme.typography.titleMedium)
+            Text("\n" + tr("Android only shares each app's size if you allow \"Usage access\". " +
+                "OpenCleaner only reads sizes. It cannot see what you do in apps.") + "\n")
             var noSettings by remember { mutableStateOf(false) }
             Button(modifier = Modifier.focusRing(), onClick = { if (!Access.openUsageSettings(ctx)) noSettings = true }) {
-                Text("Open settings")
+                Text(tr("Open settings"))
             }
             if (noSettings) {
-                Text("\nThis device has no \"Usage access\" settings page (common on TVs). Grant it once from a " +
-                    "computer with adb:\n\n" + Access.adbCommand(ctx, "GET_USAGE_STATS") +
-                    "\n\nthen come back to this tab.", style = MaterialTheme.typography.bodyMedium)
+                Text("\n" + tr("This device has no \"Usage access\" settings page (common on TVs). Grant it once from a " +
+                    "computer with adb:") + "\n\n" + Access.adbCommand(ctx, "GET_USAGE_STATS") +
+                    "\n\n" + tr("then come back to this tab."), style = MaterialTheme.typography.bodyMedium)
             }
         }
         return
@@ -642,23 +649,24 @@ fun AppsScreen() {
     Column(Modifier.fillMaxSize()) {
         if (walkIndex >= 0 && walkIndex < walk.size) {
             Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Clearing caches ${walkIndex + 1} of ${walk.size}: ${walk[walkIndex].label}\n" +
-                    "Tap Storage & cache, then Clear cache, then go back.",
+                Text(tr("Clearing caches {0} of {1}: {2}", walkIndex + 1, walk.size, walk[walkIndex].label) + "\n" +
+                    tr("Tap Storage & cache, then Clear cache, then go back."),
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                TextButton(onClick = { advance() }) { Text("Skip") }
-                TextButton(onClick = { walkIndex = -1 }) { Text("Stop") }
+                TextButton(onClick = { advance() }) { Text(tr("Skip")) }
+                TextButton(onClick = { walkIndex = -1 }) { Text(tr("Stop")) }
             }
         } else {
             val big = (apps ?: emptyList()).filter { it.cache >= 5L * 1024 * 1024 }.sortedByDescending { it.cache }.take(15)
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { systemCleaner() }) { Text("Free up space") }
+                Button(onClick = { systemCleaner() }) { Text(tr("Free up space")) }
                 Button(onClick = { walk = big; walkIndex = -1; advance() }, enabled = big.isNotEmpty()) {
-                    Text("Clear caches (${big.size})")
+                    Text(tr("Clear caches ({0})", big.size))
                 }
             }
         }
-        Text((if (BuildConfig.IS_TV) "Press OK on an app" else "Tap an app") + " to open its settings, or the bin to uninstall it. Uninstalling is permanent and removes its data; Android asks you to confirm.",
+        Text(if (BuildConfig.IS_TV) tr("Press OK on an app to open its settings, or the bin to uninstall it. Uninstalling is permanent and removes its data; Android asks you to confirm.")
+            else tr("Tap an app to open its settings, or the bin to uninstall it. Uninstalling is permanent and removes its data; Android asks you to confirm."),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp, 8.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -666,7 +674,7 @@ fun AppsScreen() {
             var sortOpen by remember { mutableStateOf(false) }
             var topOpen by remember { mutableStateOf(false) }
             Box {
-                TextButton(onClick = { sortOpen = true }) { Text("Sort: ${sort.label} ▾") }
+                TextButton(onClick = { sortOpen = true }) { Text(tr("Sort: {0}", sort.label) + " ▾") }
                 DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
                     AppSort.values().forEach { m ->
                         DropdownMenuItem(text = { Text(m.label) }, onClick = { sort = m; sortOpen = false })
@@ -674,15 +682,15 @@ fun AppsScreen() {
                 }
             }
             Box {
-                TextButton(onClick = { topOpen = true }) { Text("Show: ${if (top == 0) "All" else "Top $top"} ▾") }
+                TextButton(onClick = { topOpen = true }) { Text(tr("Show: {0}", if (top == 0) tr("All") else tr("Top {0}", top)) + " ▾") }
                 DropdownMenu(expanded = topOpen, onDismissRequest = { topOpen = false }) {
                     TOP_CHOICES.forEach { n ->
-                        DropdownMenuItem(text = { Text(if (n == 0) "All" else "Top $n") },
+                        DropdownMenuItem(text = { Text(if (n == 0) tr("All") else tr("Top {0}", n)) },
                             onClick = { top = n; topOpen = false })
                     }
                 }
             }
-            Text("${apps?.size ?: 0} apps · ${fmt(apps?.sumOf { it.total } ?: 0)}",
+            Text(tr("{0} apps · {1}", apps?.size ?: 0, fmt(apps?.sumOf { it.total } ?: 0)),
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(start = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -698,7 +706,7 @@ fun AppsScreen() {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(a.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("data ${fmt(a.data)} · cache ${fmt(a.cache)} · ${lastUsedText(a.lastUsed)}",
+                        Text(tr("data {0} · cache {1}", fmt(a.data), fmt(a.cache)) + " · " + lastUsedText(a.lastUsed),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -706,7 +714,7 @@ fun AppsScreen() {
                     IconButton(onClick = {
                         uninstalled = true
                         ctx.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${a.pkg}")))
-                    }) { Ico(R.drawable.ic_delete, "Uninstall ${a.label}") }
+                    }) { Ico(R.drawable.ic_delete, tr("Uninstall {0}", a.label)) }
                 }
             }
         }
@@ -765,7 +773,7 @@ private fun MediaPlayerView(f: File, audio: Boolean) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = {
                 video?.let { v -> if (v.isPlaying) v.pause() else v.start(); playing = v.isPlaying }
-            }) { Ico(if (playing) R.drawable.ic_pause else R.drawable.ic_play, if (playing) "Pause" else "Play", size = 24) }
+            }) { Ico(if (playing) R.drawable.ic_pause else R.drawable.ic_play, if (playing) tr("Pause") else tr("Play"), size = 24) }
             Slider(
                 value = pos.toFloat().coerceIn(0f, maxOf(dur, 1).toFloat()),
                 onValueChange = { seeking = true; pos = it.toInt() },
@@ -844,7 +852,7 @@ private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)
                             .verticalScroll(rememberScrollState()))
                 }
                 if (bitmap == null && text == null && !isVideo && !isAudio) {
-                    Text("No preview for this file type. Use Open with... to view it in another app.",
+                    Text(tr("No preview for this file type. Use Open with... to view it in another app."),
                         style = MaterialTheme.typography.bodySmall)
                 }
                 Text("\n${fmt(f.length())} · $mime\n$modified\n${f.parent ?: ""}",
@@ -856,7 +864,7 @@ private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)
             Row {
                 if (onDelete != null) {
                     IconButton(onClick = onDelete) {
-                        Ico(R.drawable.ic_delete, "Delete", MaterialTheme.colorScheme.error)
+                        Ico(R.drawable.ic_delete, tr("Delete"), MaterialTheme.colorScheme.error)
                     }
                 }
                 TextButton(onClick = {
@@ -864,12 +872,12 @@ private fun PreviewDialog(f: File, onDismiss: () -> Unit, onDelete: (() -> Unit)
                         val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
                         val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
                             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        ctx.startActivity(Intent.createChooser(view, "Open with"))
+                        ctx.startActivity(Intent.createChooser(view, tr("Open with")))
                     } catch (e: Exception) { /* no app can open this file */ }
-                }) { Text("Open with...") }
+                }) { Text(tr("Open with...")) }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Close")) } },
     )
 }
 
@@ -883,7 +891,7 @@ private fun ReviewDialog(item: CleanItem, onDismiss: () -> Unit) {
         title = { Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
             Column {
-                Text("Tap a file to preview it.", style = MaterialTheme.typography.bodySmall,
+                Text(tr("Tap a file to preview it."), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyColumn(Modifier.heightIn(max = 380.dp)) {
                     items(shown, key = { it.path }) { f ->
@@ -895,19 +903,19 @@ private fun ReviewDialog(item: CleanItem, onDismiss: () -> Unit) {
                             Ico(if (f.isDirectory) R.drawable.ic_folder else R.drawable.ic_file)
                             Spacer(Modifier.width(8.dp))
                             Text(f.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(if (f.isFile) fmt(f.length()) else "folder",
+                            Text(if (f.isFile) fmt(f.length()) else tr("folder"),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     if (item.files.size > shown.size) {
-                        item { Text("…and ${item.files.size - shown.size} more",
+                        item { Text(tr("…and {0} more", item.files.size - shown.size),
                             style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(tr("Close")) } },
     )
     preview?.let { PreviewDialog(it, { preview = null }) }
 }

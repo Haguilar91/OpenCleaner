@@ -20,15 +20,15 @@ enum Scanners {
 
     // (scanner, group, label shown when nothing is found)
     static let all: [(() -> [CleanItem], String, String)] = [
-        (homebrewCache, "Homebrew", "Download cache and old versions"),
-        (homebrewOrphans, "Homebrew", "Unneeded dependencies"),
-        (logs, "System junk", "User logs and crash reports"),
-        (userCaches, "System junk", "Large app caches"),
-        (trash, "System junk", "Trash"),
-        (xcodeData, "Developer", "Xcode build data"),
-        (simulators, "Developer", "Unavailable simulators"),
-        (iosBackups, "Device backups", "iPhone and iPad backups"),
-        (steam, "Steam", "Steam leftovers"),
+        (homebrewCache, "Homebrew", tr("Download cache and old versions")),
+        (homebrewOrphans, "Homebrew", tr("Unneeded dependencies")),
+        (logs, tr("System junk"), tr("User logs and crash reports")),
+        (userCaches, tr("System junk"), tr("Large app caches")),
+        (trash, tr("System junk"), tr("Trash")),
+        (xcodeData, tr("Developer"), tr("Xcode build data")),
+        (simulators, tr("Developer"), tr("Unavailable simulators")),
+        (iosBackups, tr("Device backups"), tr("iPhone and iPad backups")),
+        (steam, "Steam", tr("Steam leftovers")),
     ]
 
     static func runAll() -> [CleanItem] {
@@ -36,7 +36,7 @@ enum Scanners {
         for (fn, group, label) in all {
             let found = fn()
             out += found.isEmpty
-                ? [CleanItem(group: group, title: label, subtitle: "Nothing to clean", size: 0, empty: true)]
+                ? [CleanItem(group: group, title: label, subtitle: tr("Nothing to clean"), size: 0, empty: true)]
                 : found
         }
         return out
@@ -68,8 +68,8 @@ enum Scanners {
         let out = Shell.run([brew, "cleanup", "-n", "-s"]).out
         guard let line = out.split(separator: "\n").first(where: { $0.contains("free approximately") })
         else { return [] }
-        return [CleanItem(group: "Homebrew", title: "Download cache and old versions",
-                          subtitle: "Runs brew cleanup -s", size: parseSize(String(line)),
+        return [CleanItem(group: "Homebrew", title: tr("Download cache and old versions"),
+                          subtitle: tr("Runs brew cleanup -s"), size: parseSize(String(line)),
                           selected: true, command: [brew, "cleanup", "-s"])]
     }
 
@@ -79,9 +79,9 @@ enum Scanners {
         guard let i = lines.firstIndex(where: { $0.contains("autoremove") && $0.hasPrefix("==>") }) else { return [] }
         let names = lines[(i + 1)...].filter { !$0.isEmpty && !$0.hasPrefix("==>") }
         if names.isEmpty { return [] }
-        return [CleanItem(group: "Homebrew", title: "Unneeded dependencies (\(names.count))",
+        return [CleanItem(group: "Homebrew", title: tr("Unneeded dependencies ({0})", names.count),
                           subtitle: names.prefix(8).joined(separator: ", "), size: nil,
-                          command: [brew, "autoremove"], note: "Removes: " + names.joined(separator: ", "))]
+                          command: [brew, "autoremove"], note: tr("Removes:") + " " + names.joined(separator: ", "))]
     }
 
     // MARK: system junk
@@ -90,7 +90,7 @@ enum Scanners {
         let kids = FS.children(dir)
         let size = kids.reduce(Int64(0)) { $0 + FS.size($1) }
         if size < 10 * 1024 * 1024 { return [] }
-        return [CleanItem(group: "System junk", title: "User logs and crash reports",
+        return [CleanItem(group: tr("System junk"), title: tr("User logs and crash reports"),
                           subtitle: "~/Library/Logs", size: size, selected: true, paths: kids)]
     }
 
@@ -101,8 +101,8 @@ enum Scanners {
             guard FS.isRealDir(url), !name.hasPrefix("com.apple.") else { return nil }
             let size = FS.size(url)
             guard size >= cacheMin else { return nil }
-            return CleanItem(group: "System junk", title: name,
-                             subtitle: "App cache, rebuilt automatically", size: size, paths: [url])
+            return CleanItem(group: tr("System junk"), title: name,
+                             subtitle: tr("App cache, rebuilt automatically"), size: size, paths: [url])
         }.sorted { ($0.size ?? 0) > ($1.size ?? 0) }
     }
 
@@ -111,17 +111,17 @@ enum Scanners {
         let kids = FS.children(dir)
         let size = kids.reduce(Int64(0)) { $0 + FS.size($1) }
         if kids.isEmpty || size < 1024 * 1024 { return [] }
-        return [CleanItem(group: "System junk", title: "Trash",
-                          subtitle: "Permanently deletes everything in your Trash", size: size, paths: kids)]
+        return [CleanItem(group: tr("System junk"), title: tr("Trash"),
+                          subtitle: tr("Permanently deletes everything in your Trash"), size: size, paths: kids)]
     }
 
     // MARK: developer
     static func xcodeData() -> [CleanItem] {
         let dev = lib.appendingPathComponent("Developer")
         let spots: [(String, String, Bool)] = [
-            ("Xcode/DerivedData", "Build products, rebuilt on next build", true),
-            ("Xcode/iOS DeviceSupport", "Debug symbols for devices you plugged in", false),
-            ("Xcode/Archives", "Archived app builds. Keep any you still need", false),
+            ("Xcode/DerivedData", tr("Build products, rebuilt on next build"), true),
+            ("Xcode/iOS DeviceSupport", tr("Debug symbols for devices you plugged in"), false),
+            ("Xcode/Archives", tr("Archived app builds. Keep any you still need"), false),
         ]
         return spots.compactMap { path, why, on in
             let url = dev.appendingPathComponent(path)
@@ -129,7 +129,7 @@ enum Scanners {
             let kids = FS.children(url)
             let size = kids.reduce(Int64(0)) { $0 + FS.size($1) }
             guard size > 50 * 1024 * 1024 else { return nil }
-            return CleanItem(group: "Developer", title: "Xcode " + (path as NSString).lastPathComponent,
+            return CleanItem(group: tr("Developer"), title: "Xcode " + (path as NSString).lastPathComponent,
                              subtitle: why, size: size, selected: on, paths: kids)
         }
     }
@@ -142,8 +142,8 @@ enum Scanners {
         guard r.status == 0, r.out.contains("(") , r.out.contains("unavailable") else { return [] }
         let count = r.out.split(separator: "\n").filter { $0.contains("(") && $0.contains("-") && !$0.hasPrefix("==") }.count
         if count == 0 { return [] }
-        return [CleanItem(group: "Developer", title: "Unavailable simulators (\(count))",
-                          subtitle: "Simulators for removed iOS runtimes", size: nil, selected: true,
+        return [CleanItem(group: tr("Developer"), title: tr("Unavailable simulators ({0})", count),
+                          subtitle: tr("Simulators for removed iOS runtimes"), size: nil, selected: true,
                           command: ["/usr/bin/xcrun", "simctl", "delete", "unavailable"])]
     }
 
@@ -168,7 +168,7 @@ enum Scanners {
         _ = sem.wait(timeout: .now() + 6)
         guard let data = box.data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        var name = "App \(id) (not in Steam store)"
+        var name = tr("App {0} (not in Steam store)", id)
         if let entry = json[id] as? [String: Any], entry["success"] as? Bool == true,
            let d = entry["data"] as? [String: Any], let n = d["name"] as? String { name = n }
         cache[id] = name
@@ -205,7 +205,7 @@ enum Scanners {
                     .replacingOccurrences(of: "appmanifest_", with: ""))
             }
         }
-        let warn = missing ? " Some Steam library drives are not connected, so the game may live there." : ""
+        let warn = missing ? " " + tr("Some Steam library drives are not connected, so the game may live there.") : ""
         let running = Shell.run(["/usr/bin/pgrep", "-x", "steam_osx"]).status == 0
         // deletes are limited to the home folder, so libraries on other drives are skipped
         func inHome(_ u: URL) -> Bool { u.standardizedFileURL.path.hasPrefix(home + "/") }
@@ -220,8 +220,8 @@ enum Scanners {
                 let size = FS.size(dir)
                 guard size >= 1024 * 1024 else { continue }
                 let name = steamName(id)
-                items.append(CleanItem(group: "Steam", title: "Shader cache: " + (name ?? "app \(id)"),
-                                       subtitle: "Game not installed (app \(id)). Steam rebuilds this if you reinstall." + warn,
+                items.append(CleanItem(group: "Steam", title: tr("Shader cache: {0}", name ?? "app \(id)"),
+                                       subtitle: tr("Game not installed (app {0}). Steam rebuilds this if you reinstall.", id) + warn,
                                        size: size, selected: true, paths: [dir]))
             }
         }
@@ -230,9 +230,9 @@ enum Scanners {
         let htmlKids = FS.children(html)
         let htmlSize = htmlKids.reduce(Int64(0)) { $0 + FS.size($1) }
         if htmlSize >= cacheMin {
-            items.append(CleanItem(group: "Steam", title: "Steam browser cache",
-                                   subtitle: running ? "Steam is running. Close it first, or in-use files are skipped."
-                                                     : "Cache of the Steam store and community pages",
+            items.append(CleanItem(group: "Steam", title: tr("Steam browser cache"),
+                                   subtitle: running ? tr("Steam is running. Close it first, or in-use files are skipped.")
+                                                     : tr("Cache of the Steam store and community pages"),
                                    size: htmlSize, paths: htmlKids))
         }
 
@@ -244,8 +244,8 @@ enum Scanners {
         }
         let partialSize = partial.reduce(Int64(0)) { $0 + FS.size($1) }
         if partialSize >= 10 * 1024 * 1024 {
-            items.append(CleanItem(group: "Steam", title: "Unfinished game downloads",
-                                   subtitle: "Partial downloads. Don't clean while a download you want to resume is paused.",
+            items.append(CleanItem(group: "Steam", title: tr("Unfinished game downloads"),
+                                   subtitle: tr("Partial downloads. Don't clean while a download you want to resume is paused."),
                                    size: partialSize, paths: partial))
         }
         return items
@@ -259,9 +259,9 @@ enum Scanners {
                 .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
             let name = info?["Device Name"] as? String ?? url.lastPathComponent
             let date = (info?["Last Backup Date"] as? Date)
-                .map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .none) } ?? "unknown date"
-            return CleanItem(group: "Device backups", title: name,
-                             subtitle: "Last backup \(date). Cannot be recovered once deleted.",
+                .map { DateFormatter.localizedString(from: $0, dateStyle: .medium, timeStyle: .none) } ?? tr("unknown date")
+            return CleanItem(group: tr("Device backups"), title: name,
+                             subtitle: tr("Last backup {0}. Cannot be recovered once deleted.", date),
                              size: FS.size(url), paths: [url])
         }
     }

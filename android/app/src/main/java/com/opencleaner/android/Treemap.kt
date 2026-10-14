@@ -49,7 +49,7 @@ object Treemap {
 }
 
 /** File categories shown by color, like WinDirStat. */
-enum class Kind(val label: String, val color: Color) {
+enum class Kind(private val en: String, val color: Color) {
     Folder("Folders", Color(0xFF2563EB)),
     Image("Images", Color(0xFF2E9E5B)),
     Video("Video", Color(0xFF8C54CC)),
@@ -57,6 +57,8 @@ enum class Kind(val label: String, val color: Color) {
     Document("Documents", Color(0xFF1A999E)),
     Archive("Archives", Color(0xFFC74545)),
     Other("Other", Color(0xFF6B758A));
+
+    val label: String get() = tr(en)
 
     companion object {
         fun of(f: File): Kind {

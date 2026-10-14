@@ -90,7 +90,7 @@ final class ReviewModel: ObservableObject {
 /// decide whether to delete it. `onTrash` adds a Move to Trash button.
 struct PreviewSheet: View {
     let url: URL
-    var deleteTitle = "Move to Trash"
+    var deleteTitle = tr("Move to Trash")
     var onTrash: ((URL) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = PreviewModel()
@@ -99,7 +99,7 @@ struct PreviewSheet: View {
         let v = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .localizedTypeDescriptionKey])
         let size = fmt(Int64(v?.fileSize ?? 0))
         let when = v?.contentModificationDate.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
-        return "\(size) \u{00B7} \(v?.localizedTypeDescription ?? "File")\n\(when)\n\(url.deletingLastPathComponent().path)"
+        return "\(size) \u{00B7} \(v?.localizedTypeDescription ?? tr("File"))\n\(when)\n\(url.deletingLastPathComponent().path)"
     }
 
     var body: some View {
@@ -121,7 +121,7 @@ struct PreviewSheet: View {
                     }
                     .frame(height: 360)
                 } else if model.loaded {
-                    Text("No preview for this file type. Use Open to view it in another app.")
+                    Text(tr("No preview for this file type. Use Open to view it in another app."))
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
                     ProgressView().frame(maxWidth: .infinity)
@@ -136,9 +136,9 @@ struct PreviewSheet: View {
                     }
                 }
                 Spacer()
-                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                Button("Open") { NSWorkspace.shared.open(url) }
-                Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(tr("Reveal")) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                Button(tr("Open")) { NSWorkspace.shared.open(url) }
+                Button(tr("Close")) { dismiss() }.keyboardShortcut(.cancelAction)
             }
         }
         .padding(20)
@@ -159,7 +159,7 @@ struct ReviewSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(item.title).font(.headline)
-            Text("Click a file to preview it.").font(.caption).foregroundStyle(.secondary)
+            Text(tr("Click a file to preview it.")).font(.caption).foregroundStyle(.secondary)
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(shown, id: \.self) { u in
@@ -169,7 +169,7 @@ struct ReviewSheet: View {
                                 Image(systemName: isDir ? "folder.fill" : "doc").frame(width: 18)
                                 Text(u.lastPathComponent).lineLimit(1)
                                 Spacer()
-                                Text(isDir ? "folder" : fmt(Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)))
+                                Text(isDir ? tr("folder") : fmt(Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             .padding(.vertical, 5).contentShape(Rectangle())
@@ -178,13 +178,13 @@ struct ReviewSheet: View {
                         Divider()
                     }
                     if item.paths.count > shown.count {
-                        Text("…and \(item.paths.count - shown.count) more")
+                        Text(tr("…and {0} more", item.paths.count - shown.count))
                             .font(.caption).padding(.top, 6)
                     }
                 }
             }
             .frame(height: 300)
-            HStack { Spacer(); Button("Close") { dismiss() }.keyboardShortcut(.cancelAction) }
+            HStack { Spacer(); Button(tr("Close")) { dismiss() }.keyboardShortcut(.cancelAction) }
         }
         .padding(20)
         .frame(width: 480)

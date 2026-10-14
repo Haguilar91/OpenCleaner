@@ -16,7 +16,7 @@ class CleanVm(app: Application) : AndroidViewModel(app) {
     var items by mutableStateOf<List<CleanItem>>(emptyList()); private set
     var selected by mutableStateOf<Set<String>>(emptySet()); private set
     var busy by mutableStateOf(false); private set
-    var busyText by mutableStateOf("Scanning…"); private set
+    var busyText by mutableStateOf(tr("Scanning…")); private set
     var message by mutableStateOf<String?>(null)
     var confirming by mutableStateOf(false)
     var free by mutableStateOf(""); private set
@@ -33,7 +33,7 @@ class CleanVm(app: Application) : AndroidViewModel(app) {
     fun refreshFree() {
         val s = StatFs(Environment.getDataDirectory().path)
         val usedPct = 100.0 * (s.totalBytes - s.availableBytes) / s.totalBytes
-        free = "${fmt(s.availableBytes)} free · ${usedPct.toInt()}% used"
+        free = tr("{0} free · {1}% used", fmt(s.availableBytes), usedPct.toInt())
     }
 
     fun toggle(id: String) {
@@ -43,7 +43,7 @@ class CleanVm(app: Application) : AndroidViewModel(app) {
     fun scan() {
         if (busy) return
         busy = true
-        busyText = "Scanning…"
+        busyText = tr("Scanning…")
         viewModelScope.launch {
             val found = withContext(Dispatchers.IO) { Scanners.runAll(getApplication()) }
             items = found
@@ -57,17 +57,17 @@ class CleanVm(app: Application) : AndroidViewModel(app) {
         val todo = chosen
         if (todo.isEmpty() || busy) return
         busy = true
-        busyText = "Cleaning…"
+        busyText = tr("Cleaning…")
         val before = freeBytes()
         viewModelScope.launch {
             val results = withContext(Dispatchers.IO) { todo.map { Scanners.clean(getApplication(), it) } }
             busy = false
             refreshFree()
             val freed = freeBytes() - before
-            val sb = StringBuilder("Cleaning finished")
-            if (freed > 0) sb.append(" · freed ${fmt(freed)}")
+            val sb = StringBuilder(tr("Cleaning finished"))
+            if (freed > 0) sb.append(" · " + tr("freed {0}", fmt(freed)))
             val skipped = results.sumOf { it.skipped }
-            if (skipped > 0) sb.append("\n\n$skipped item(s) could not be deleted.")
+            if (skipped > 0) sb.append("\n\n" + tr("{0} item(s) could not be deleted.", skipped))
             results.filter { it.error != null }.forEach { sb.append("\n\n${it.title}: ${it.error}") }
             message = sb.toString()
             scan()

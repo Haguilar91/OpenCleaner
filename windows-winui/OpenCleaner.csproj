@@ -6,8 +6,8 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>OpenCleaner</RootNamespace>
     <AssemblyName>OpenCleaner</AssemblyName>
-    <Version>1.3.0</Version>
-    <FileVersion>1.3.0.0</FileVersion>
+    <Version>1.4.0</Version>
+    <FileVersion>1.4.0.0</FileVersion>
     <Product>OpenCleaner</Product>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -30,6 +30,11 @@
 
   <ItemGroup>
     <Content Include="icon.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Spanish texts, shared with the WinForms app (C# 5) -->
+    <Compile Include="..\windows\Strings.cs" Link="Strings.cs" />
   </ItemGroup>
 
   <!-- dotnet publish leaves out the compiled XAML (.xbf) of an unpackaged WinUI 3 app, and the app
