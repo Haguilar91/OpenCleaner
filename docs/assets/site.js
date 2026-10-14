@@ -179,7 +179,8 @@
   function mb(bytes) { return bytes >= 1048576 ? (bytes / 1048576).toFixed(0) + " MB" : Math.max(1, Math.round(bytes / 1024)) + " KB"; }
   function applyRelease(rel) {
     if (!rel || !rel.assets) return;
-    const ver = (rel.tag_name || "").replace(/^v/i, "");
+    // tag v1.4.0 -> 1.4, the version used in the file names (and in the adb command)
+    const ver = (rel.tag_name || "").replace(/^v/i, "").replace(/^(\d+\.\d+)(\.0)+$/, "$1");
     if (ver) document.querySelectorAll("[data-version]").forEach(n => { n.textContent = ver; });
     const found = {};
     rel.assets.forEach(a => { for (const k in PATTERNS) if (PATTERNS[k].test(a.name) && !found[k]) found[k] = a; });
