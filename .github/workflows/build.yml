@@ -206,7 +206,8 @@ jobs:
           sha256sum OpenCleaner-* opencleaner-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
           count=$(wc -l < SHA256SUMS.txt)
-          [ "$count" -eq 10 ] || { echo "::error::expected 10 files, got $count"; exit 1; }
+          # 9 downloads (4 Windows, macOS, 2 Linux, 2 Android); SHA256SUMS.txt is the 10th file of the release
+          [ "$count" -eq 9 ] || { echo "::error::expected 9 files, got $count"; exit 1; }
       - name: Draft release
         run: |
           notes="docs/releases/$V.md"
