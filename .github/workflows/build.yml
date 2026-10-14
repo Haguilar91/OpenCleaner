@@ -151,9 +151,10 @@ jobs:
           gradle-version: "8.7"
       - name: Signing key
         run: |
-          mkdir -p ~/.android
           if [ -n "$KEYSTORE" ]; then
-            echo "$KEYSTORE" | base64 -d > ~/.android/debug.keystore
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "OPENCLEANER_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            keytool -list -keystore "$RUNNER_TEMP/release.keystore" -storepass android | grep "SHA-256"
           elif [ "$IS_RELEASE" = true ]; then
             echo "::error::ANDROID_SIGNING_KEYSTORE is not set: a release APK signed with another key could not update the installed app."
             exit 1

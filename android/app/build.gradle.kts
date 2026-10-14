@@ -35,6 +35,14 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // GitHub Actions signs with the key of earlier releases (secret ANDROID_SIGNING_KEYSTORE, see
+            // docs/ci.md); without this variable the usual ~/.android/debug.keystore is used.
+            System.getenv("OPENCLEANER_KEYSTORE")?.let { storeFile = file(it) }
+        }
+    }
+
     buildTypes {
         release { isMinifyEnabled = false }
     }
