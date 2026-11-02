@@ -284,9 +284,14 @@ ES = {
     "{0} uninstalled": "{0} se desinstaló",
     "{0} folder(s) deleted": "se eliminaron {0} carpeta(s)",
     "Could not uninstall": "No se pudo desinstalar",
+    # --install
+    "Scan and clean reclaimable disk space": "Analiza y limpia el espacio que se puede recuperar",
+    "Added OpenCleaner to the app menu: {0}": "OpenCleaner se añadió al menú de aplicaciones: {0}",
 }
 
 VERSION = "1.4"
+APP_ID = "local.opencleaner.OpenCleaner"
+ICON_DIR = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "icons")
 HOME = os.path.expanduser("~")
 JOURNAL_KEEP_MB = 200
 CACHE_MIN_BYTES = 100 * 1024 * 1024
@@ -854,7 +859,7 @@ def show_review(parent, item):
     for path in paths:
         is_dir = os.path.isdir(path) and not os.path.islink(path)
         row = Adw.ActionRow(title=GLib.markup_escape_text(os.path.basename(path)), activatable=not is_dir)
-        row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir else "text-x-generic-symbolic"))
+        row.add_prefix(Gtk.Image(icon_name="opencleaner-folder-symbolic" if is_dir else "opencleaner-text-x-generic-symbolic"))
         try:
             label = tr("folder") if is_dir else fmt_size(os.lstat(path).st_size)
         except OSError:
@@ -1031,7 +1036,7 @@ class Explorer(Gtk.Box):
         self.gen = 0
 
         bar = Gtk.Box(spacing=6, margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
-        self.up_btn = Gtk.Button(icon_name="go-up-symbolic", tooltip_text=tr("Parent folder"))
+        self.up_btn = Gtk.Button(icon_name="opencleaner-go-up-symbolic", tooltip_text=tr("Parent folder"))
         self.up_btn.connect("clicked", lambda *_: self.go(os.path.dirname(self.path)))
         home_btn = Gtk.Button(label=tr("Home"))
         home_btn.connect("clicked", lambda *_: self.set_root(HOME))
@@ -1050,7 +1055,7 @@ class Explorer(Gtk.Box):
         self.top_dd = Gtk.DropDown.new_from_strings([tr("All")] + [tr("Top {0}", n) for n in TOPS[1:]])
         self.top_dd.set_tooltip_text(tr("Show only the first items of the sort"))
         self.top_dd.connect("notify::selected", self._on_top)
-        self.map_btn = Gtk.ToggleButton(icon_name="view-grid-symbolic", tooltip_text=tr("Disk map"))
+        self.map_btn = Gtk.ToggleButton(icon_name="opencleaner-view-grid-symbolic", tooltip_text=tr("Disk map"))
         self.map_btn.connect("toggled", self._on_map_toggled)
         self.selected = set()
         self.syncing = False
@@ -1103,7 +1108,8 @@ class Explorer(Gtk.Box):
         self.stack = Gtk.Stack(vexpand=True)
         self.stack.add_named(sw, "list")
         self.stack.add_named(map_box, "map")
-        self.append(self.stack)
+        self.toasts = Adw.ToastOverlay(child=self.stack, vexpand=True)
+        self.append(self.toasts)
 
         self.sel_bar = Gtk.ActionBar(revealed=False)
         self.sel_label = Gtk.Label(css_classes=["dim-label"])
@@ -1193,8 +1199,13 @@ class Explorer(Gtk.Box):
         self.map_rects = []
         cr.select_font_face("Sans")
         cr.set_font_size(11)
-        for e, (x, y, w, h) in zip(shown, rects):
+        for i, (e, (x, y, w, h)) in enumerate(zip(shown, rects)):
             r, g, b = KINDS[kind_of(e["path"], e["is_dir"])][1]
+            shade = (0.0, 0.18, -0.12, 0.32)[i % 4]     # same hue, different lightness per block
+            if shade > 0:
+                r, g, b = r + (1 - r) * shade, g + (1 - g) * shade, b + (1 - b) * shade
+            elif shade < 0:
+                r, g, b = r * (1 + shade), g * (1 + shade), b * (1 + shade)
             cr.set_source_rgb(r, g, b)
             cr.rectangle(x + 1, y + 1, max(w - 2, 0), max(h - 2, 0))
             cr.fill()
@@ -1304,19 +1315,19 @@ class Explorer(Gtk.Box):
         row.check = Gtk.CheckButton(valign=Gtk.Align.CENTER, tooltip_text=tr("Select"))
         row.check.connect("toggled", lambda c: self.syncing or self._toggle(entry.path))
         row.add_prefix(row.check)
-        row.add_prefix(Gtk.Image(icon_name="folder-symbolic" if is_dir
-                                 else "text-x-generic-symbolic"))
+        row.add_prefix(Gtk.Image(icon_name="opencleaner-folder-symbolic" if is_dir
+                                 else "opencleaner-text-x-generic-symbolic"))
         row.size_label = Gtk.Label(label="…", css_classes=["dim-label"],
                                    width_chars=10, xalign=1)
         row.bar = Gtk.LevelBar(min_value=0, max_value=1, value=0, width_request=90,
                                valign=Gtk.Align.CENTER)
-        trash = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
+        trash = Gtk.Button(icon_name="opencleaner-user-trash-symbolic", valign=Gtk.Align.CENTER,
                            css_classes=["flat"], tooltip_text=tr("Delete"))
         trash.connect("clicked", lambda *_: self.confirm_delete([entry.path]))
         for w in (row.bar, row.size_label, trash):
             row.add_suffix(w)
         if is_dir:
-            row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
+            row.add_suffix(Gtk.Image(icon_name="opencleaner-go-next-symbolic"))
             row.connect("activated", lambda *_: self.go(entry.path))
         else:
             row.connect("activated", lambda *_: show_preview(self.win, entry.path, lambda p: self.confirm_delete([p]),
@@ -1381,8 +1392,8 @@ class Explorer(Gtk.Box):
 
     def _deleted(self, done, failed, permanent):
         if done:
-            self.win.toast.add_toast(Adw.Toast(
-                title=tr("{0} item(s) deleted", done) if permanent else tr("{0} item(s) moved to the Trash (empty it to free space)", done)))
+            self.win.notify(tr("{0} item(s) deleted", done) if permanent
+                            else tr("{0} item(s) moved to the Trash (empty it to free space)", done))
         if failed:
             dlg = AlertDialog(heading=tr("Some items could not be deleted"), body="\n".join(failed[:12]))
             dlg.add_response("ok", tr("OK"))
@@ -1548,7 +1559,8 @@ class AppsPage(Gtk.Box):
                                 margin_start=12, margin_end=12, margin_bottom=12)
         sw = Gtk.ScrolledWindow(vexpand=True)
         sw.set_child(self.list)
-        self.append(sw)
+        self.toasts = Adw.ToastOverlay(child=sw, vexpand=True)
+        self.append(self.toasts)
         self.reload()
 
     def reload(self):
@@ -1589,7 +1601,7 @@ class AppsPage(Gtk.Box):
             row = Adw.ActionRow(title=GLib.markup_escape_text(a["name"]),
                                 subtitle=GLib.markup_escape_text(f"{kind} · {ago(a['last'])}"))
             row.add_suffix(Gtk.Label(label=fmt_size(a["size"]), css_classes=["dim-label"]))
-            btn = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
+            btn = Gtk.Button(icon_name="opencleaner-user-trash-symbolic", valign=Gtk.Align.CENTER,
                              css_classes=["flat"], tooltip_text=tr("Uninstall…"))
             btn.connect("clicked", lambda _b, app=a: self.review(app))
             row.add_suffix(btn)
@@ -1663,8 +1675,7 @@ class AppsPage(Gtk.Box):
 
     def _uninstalled(self, app, ok, msg, moved):
         if ok:
-            self.win.toast.add_toast(Adw.Toast(
-                title=tr("{0} uninstalled", app["name"]) + (", " + tr("{0} folder(s) deleted", moved) if moved else "")))
+            self.win.notify(tr("{0} uninstalled", app["name"]) + (", " + tr("{0} folder(s) deleted", moved) if moved else ""))
         else:
             dlg = AlertDialog(heading=tr("Could not uninstall"), body=msg or tr("cancelled or failed"))
             dlg.add_response("ok", tr("OK"))
@@ -1682,14 +1693,14 @@ class Window(Adw.ApplicationWindow):
 
         toolbar = ToolbarView()
         header = Adw.HeaderBar()
-        self.scan_btn = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text=tr("Rescan"))
+        self.scan_btn = Gtk.Button(icon_name="opencleaner-view-refresh-symbolic", tooltip_text=tr("Rescan"))
         self.scan_btn.connect("clicked", self.on_refresh)
         brand = Gtk.Label(label="OpenCleaner", css_classes=["title-4"], margin_start=6, margin_end=10,
                           tooltip_text=f"OpenCleaner {VERSION}")
         header.pack_start(brand)
         header.pack_start(self.scan_btn)
         self.update = None
-        self.update_btn = Gtk.Button(icon_name="software-update-available-symbolic",
+        self.update_btn = Gtk.Button(icon_name="opencleaner-software-update-available-symbolic",
                                      tooltip_text=tr("Check for updates (OpenCleaner {0})", VERSION))
         self.update_btn.connect("clicked", lambda *_: self.on_update_clicked())
         header.pack_end(self.update_btn)
@@ -1707,7 +1718,7 @@ class Window(Adw.ApplicationWindow):
         self.spinner_page.set_child(Gtk.Spinner(spinning=True, width_request=32,
                                                 height_request=32))
         self.page = Adw.PreferencesPage()
-        self.empty_page = Adw.StatusPage(icon_name="emblem-ok-symbolic",
+        self.empty_page = Adw.StatusPage(icon_name="opencleaner-object-select-symbolic",
                                          title=tr("Nothing to clean"),
                                          description=tr("No reclaimable space found."))
         self.stack.add_named(self.spinner_page, "scan")
@@ -1731,17 +1742,26 @@ class Window(Adw.ApplicationWindow):
         clean_box.append(self.toast)
         clean_box.append(bar)
         self.explorer = Explorer(self)
-        self.views.add_titled_with_icon(clean_box, "clean", tr("Clean"), "edit-clear-all-symbolic")
+        self.views.add_titled_with_icon(clean_box, "clean", tr("Clean"), "opencleaner-edit-clear-all-symbolic")
         self.views.add_titled_with_icon(self.explorer, "explore", tr("Disk usage"),
-                                        "drive-harddisk-symbolic")
+                                        "opencleaner-drive-harddisk-symbolic")
         self.apps_page = AppsPage(self)
-        self.views.add_titled_with_icon(self.apps_page, "apps", tr("Apps"), "view-app-grid-symbolic")
+        self.views.add_titled_with_icon(self.apps_page, "apps", tr("Apps"), "opencleaner-view-app-grid-symbolic")
         toolbar.set_content(self.views)
         self.set_content(toolbar)
         self.free_before = None
         self.update_free()
         self.scan()
         self.check_updates(manual=False)
+
+    def notify(self, text):
+        """Toast on the tab being shown (each tab has its own overlay, so it never covers the
+        Clean tab's bottom bar or lands on a hidden tab). A new toast replaces the old one."""
+        overlays = {"clean": self.toast, "explore": self.explorer.toasts, "apps": self.apps_page.toasts}
+        if getattr(self, "_toast", None):
+            self._toast.dismiss()
+        self._toast = Adw.Toast(title=GLib.markup_escape_text(text), timeout=4)
+        overlays.get(self.views.get_visible_child_name(), self.toast).add_toast(self._toast)
 
     # -- updates
     def check_updates(self, manual):
@@ -1764,7 +1784,7 @@ class Window(Adw.ApplicationWindow):
                 self.offer_update()
         elif manual:
             text = tr("Could not check for updates: {0}", err) if err else tr("OpenCleaner {0} is up to date", VERSION)
-            self.toast.add_toast(Adw.Toast(title=text))
+            self.notify(text)
 
     def on_update_clicked(self):
         if self.update:
@@ -1879,7 +1899,7 @@ class Window(Adw.ApplicationWindow):
                 row.set_activatable_widget(check)
                 row.add_suffix(Gtk.Label(label=fmt_size(it.size), css_classes=["dim-label"]))
                 if it.paths:
-                    review = Gtk.Button(icon_name="view-reveal-symbolic", valign=Gtk.Align.CENTER,
+                    review = Gtk.Button(icon_name="opencleaner-view-reveal-symbolic", valign=Gtk.Align.CENTER,
                                         css_classes=["flat"], tooltip_text=tr("Review files"))
                     review.connect("clicked", lambda _b, i=it: show_review(self, i))
                     row.add_suffix(review)
@@ -1942,7 +1962,7 @@ class Window(Adw.ApplicationWindow):
         else:
             freed = self.update_free() - (self.free_before or 0)
             msg = tr("Cleaning finished") + (" · " + tr("freed {0}", fmt_size(freed)) if freed > 0 else "")
-            self.toast.add_toast(Adw.Toast(title=msg))
+            self.notify(msg)
         self.update_free()
         self.explorer.reload()
         self.scan()
@@ -1950,11 +1970,13 @@ class Window(Adw.ApplicationWindow):
 
 class App(Adw.Application):
     def __init__(self):
-        super().__init__(application_id="local.opencleaner.OpenCleaner")
+        super().__init__(application_id=APP_ID)
 
     def do_startup(self):
         Adw.Application.do_startup(self)
-        Gtk.Window.set_default_icon_name("local.opencleaner.OpenCleaner")
+        # bundled icons (app icon + opencleaner-*-symbolic), so no icon theme can replace or lack them
+        Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(ICON_DIR)
+        Gtk.Window.set_default_icon_name(APP_ID)
         # Brand: Trust Blue accent, Ubuntu font when installed (falls back to the system font)
         css = Gtk.CssProvider()
         load_css(css, 
@@ -1968,5 +1990,33 @@ class App(Adw.Application):
         (self.props.active_window or Window(self)).present()
 
 
+def install_launcher():
+    """Add OpenCleaner to this user's app menu: copy the app icon and write a .desktop file that
+    starts this binary (or this script). GNOME on Wayland takes the dock icon only from these."""
+    data = os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local/share")
+    icon_dir = os.path.join(data, "icons/hicolor/scalable/apps")
+    app_dir = os.path.join(data, "applications")
+    os.makedirs(icon_dir, exist_ok=True)
+    os.makedirs(app_dir, exist_ok=True)
+    shutil.copy(os.path.join(ICON_DIR, "hicolor/scalable/apps", APP_ID + ".svg"), icon_dir)
+    if getattr(sys, "frozen", False):
+        cmd = f'"{sys.executable}"'
+    else:
+        cmd = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+    desktop = os.path.join(app_dir, APP_ID + ".desktop")
+    comment = tr("Scan and clean reclaimable disk space")
+    with open(desktop, "w") as f:
+        f.write("[Desktop Entry]\nType=Application\nName=OpenCleaner\n"
+                f"Comment={comment}\n"
+                f"Exec={cmd}\nIcon={APP_ID}\nTerminal=false\nCategories=System;Utility;\n"
+                f"StartupWMClass={APP_ID}\n")
+    run(["update-desktop-database", app_dir])
+    run(["gtk-update-icon-cache", "-qtf", os.path.join(data, "icons/hicolor")])
+    print(tr("Added OpenCleaner to the app menu: {0}", desktop))
+
+
 if __name__ == "__main__":
-    App().run()
+    if "--install" in sys.argv[1:]:
+        install_launcher()
+    else:
+        App().run()

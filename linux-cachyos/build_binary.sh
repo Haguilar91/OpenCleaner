@@ -5,12 +5,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PY="$(command -v python3 || command -v python)"
+# the system Python has the GTK bindings (gi); a Homebrew/pyenv python3 first on PATH does not
+PY="$(ls /usr/bin/python3 2>/dev/null || command -v python3 || command -v python)"
 "$PY" -m venv --system-site-packages .buildenv
-.buildenv/bin/pip install -q pyinstaller
+.buildenv/bin/python -m pip install -q pyinstaller
 
 # PyInstaller's gi hooks bundle GTK 3 unless told otherwise, so pin GTK 4 in the spec.
-.buildenv/bin/pyi-makespec --onefile --name opencleaner --specpath build opencleaner.py >/dev/null
+.buildenv/bin/python -m PyInstaller.utils.cliutils.makespec --onefile --name opencleaner --specpath build \
+    --add-data "$PWD/icons:icons" opencleaner.py >/dev/null
 .buildenv/bin/python - <<'PYEOF'
 import re
 p = "build/opencleaner.spec"
@@ -21,7 +23,7 @@ s, n = re.subn(r"hooksconfig=\{\},", cfg, s)
 assert n == 1, "hooksconfig not found in the generated spec"
 open(p, "w").write(s)
 PYEOF
-.buildenv/bin/pyinstaller --noconfirm --clean --distpath dist --workpath build build/opencleaner.spec
+.buildenv/bin/python -m PyInstaller --noconfirm --clean --distpath dist --workpath build build/opencleaner.spec
 
 echo
 echo "Built dist/opencleaner  -  run it with ./dist/opencleaner"

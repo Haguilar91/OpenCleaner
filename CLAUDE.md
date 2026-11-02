@@ -107,6 +107,14 @@ Windows already have them).
   `windows-winui` folders to `~/Winshared/shots`, then `powershell -ExecutionPolicy Bypass -File Z:\shots\take_screenshots.ps1`).
   It builds both apps, makes a sample folder and uses the `--tab clean|disk|apps`, `--root`, `--map` launch options.
   `utmctl exec` runs as SYSTEM with no desktop, so Claude cannot take them itself.
+- **Linux icons are bundled** in `linux-cachyos/icons/` (see its README): UI icons are copies from Adwaita
+  named `opencleaner-*-symbolic`, so no icon theme can replace or lack them; the app icon is
+  `icons/hicolor/scalable/apps/local.opencleaner.OpenCleaner.svg` (written by `build_icons.py`).
+  `opencleaner.py --install` (script or binary) writes the .desktop file and icon to `~/.local/share`;
+  GNOME on Wayland takes the dock icon only from there.
+- **Linux toasts go through `Window.notify()`**: each tab has its own `Adw.ToastOverlay` and notify picks
+  the visible one. A single overlay on the Clean tab hid toasts from Disk usage and Apps (update check,
+  trash, uninstall). `build_binary.sh` uses `/usr/bin/python3`: a Homebrew/pyenv `python3` has no `gi`.
 - Wine's list view does not draw groups and may not render some glyphs, so judge the look on real
   Windows, not Wine.
 - **Android**: since Android 11 an app cannot clear other apps' caches or read their private data.

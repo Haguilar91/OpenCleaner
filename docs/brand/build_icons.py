@@ -76,7 +76,7 @@ async def main():
     shutil.copy(SVG / "opencleaner-icon-light.svg", ROOT / "macos/Resources/icon.svg")
 
     # 5. Linux
-    shutil.copy(SVG / "opencleaner-icon-light.svg", ROOT / "linux-cachyos/icon.svg")
+    shutil.copy(SVG / "opencleaner-icon-light.svg", ROOT / "linux-cachyos/icons/hicolor/scalable/apps/local.opencleaner.OpenCleaner.svg")
     print("Icons regenerated.")
 
 

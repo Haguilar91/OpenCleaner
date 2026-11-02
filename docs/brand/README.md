@@ -24,7 +24,7 @@ A silver hard disk with a blue sweep: one swipe and the drive is clean.
 
 | App | File(s) | Wired up by |
 |---|---|---|
-| Linux | `linux-cachyos/icon.svg` | |
+| Linux | `linux-cachyos/icons/hicolor/scalable/apps/local.opencleaner.OpenCleaner.svg` | bundled; `opencleaner.py --install` adds it to the app menu |
 | macOS | `macos/Resources/AppIcon.iconset/`, `macos/Resources/icon.svg` | `build_app.sh` (`iconutil` → `AppIcon.icns`) |
 | Windows WinForms | `windows/icon.ico` | `build.bat` (`/win32icon`) |
 | Windows WinUI 3 | `windows-winui/icon.ico` | `OpenCleaner.csproj` (`ApplicationIcon`) + `AppWindow.SetIcon` |
