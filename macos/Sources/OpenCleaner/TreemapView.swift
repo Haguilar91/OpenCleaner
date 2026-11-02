@@ -81,6 +81,14 @@ enum Kind: CaseIterable {
         }
     }
 
+    /// Folders alternate between shades of the folder blue so neighbouring blocks stand apart
+    /// (same shades as the Linux app).
+    static func folderShade(_ i: Int) -> Color {
+        let s = [0.0, 0.18, -0.12, 0.32][i % 4]
+        func f(_ v: Double) -> Double { s >= 0 ? v + (1 - v) * s : v * (1 + s) }
+        return Color(red: f(0.145), green: f(0.388), blue: f(0.922))
+    }
+
     static func of(_ e: Entry) -> Kind {
         if e.isDir { return .folder }
         switch e.id.pathExtension.lowercased() {
@@ -111,7 +119,7 @@ struct MapView: View {
                                            in: CGRect(origin: .zero, size: geo.size))
                 ZStack(alignment: .topLeading) {
                     ForEach(Array(shown.enumerated()), id: \.element.id) { i, e in
-                        if i < rects.count { block(e, rects[i]) }
+                        if i < rects.count { block(e, i, rects[i]) }
                     }
                     if shown.isEmpty {
                         Text(model.measuring ? tr("Measuring…") : tr("Nothing to show"))
@@ -133,13 +141,14 @@ struct MapView: View {
         .padding(.horizontal, 24).padding(.bottom, 14)
     }
 
-    private func block(_ e: Entry, _ r: CGRect) -> some View {
+    private func block(_ e: Entry, _ i: Int, _ r: CGRect) -> some View {
         let inner = r.insetBy(dx: 1, dy: 1)
+        let fill = e.isDir ? Kind.folderShade(i).opacity(0.95) : Kind.of(e).color.opacity(0.85)
         let w = max(inner.width, 0), h = max(inner.height, 0)
         let picked = model.selected.contains(e.id)
         return Button { open(e) } label: {
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 3).fill(Kind.of(e).color.opacity(e.isDir ? 0.95 : 0.85))
+                RoundedRectangle(cornerRadius: 3).fill(fill)
                 if picked {                                   // selected: thick outline and a check mark
                     RoundedRectangle(cornerRadius: 3).strokeBorder(Color.white, lineWidth: 3)
                     RoundedRectangle(cornerRadius: 3).strokeBorder(Color.black.opacity(0.6), lineWidth: 1)

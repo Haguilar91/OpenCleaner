@@ -378,7 +378,7 @@ public sealed class DiskView : UserControl
         {
             var r = shown[i];
             var (x, y, w, h) = rects[i];
-            var color = Treemap.Kinds[Treemap.KindOf(r.FullPath, r.IsDir)].Color;
+            var color = Treemap.ColorFor(r.FullPath, r.IsDir, i);
             var block = new Border
             {
                 Width = Math.Max(w - 2, 0),

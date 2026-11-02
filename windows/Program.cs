@@ -675,6 +675,23 @@ namespace OpenCleaner
             new string[] { ".zip", ".iso", ".7z", ".rar", ".tar", ".gz", ".cab", ".msi" }
         };
 
+        // Folders alternate between shades of the folder blue so neighbouring blocks stand apart
+        // (same shades as the Linux app).
+        static readonly double[] FolderShades = { 0, 0.18, -0.12, 0.32 };
+
+        public static Color ColorFor(string path, bool isDir, int i)
+        {
+            Color c = KindColors[KindOf(path, isDir)];
+            if (!isDir) return c;
+            double s = FolderShades[i % FolderShades.Length];
+            return Color.FromArgb(Shade(c.R, s), Shade(c.G, s), Shade(c.B, s));
+        }
+
+        static int Shade(int v, double s)
+        {
+            return (int)Math.Round(s >= 0 ? v + (255 - v) * s : v * (1 + s));
+        }
+
         // Index into KindNames / KindColors.
         public static int KindOf(string path, bool isDir)
         {
@@ -776,7 +793,7 @@ namespace OpenCleaner
                     RectangleF r = rects[i];
                     r.Offset(pad, pad);
                     rects[i] = r;
-                    using (SolidBrush b = new SolidBrush(Treemap.KindColors[Treemap.KindOf(Items[i].Path, Items[i].IsDir)]))
+                    using (SolidBrush b = new SolidBrush(Treemap.ColorFor(Items[i].Path, Items[i].IsDir, i)))
                         g.FillRectangle(b, r.X + 1, r.Y + 1, Math.Max(r.Width - 2, 0), Math.Max(r.Height - 2, 0));
                     if (Selected.Contains(Items[i].Path))
                     {

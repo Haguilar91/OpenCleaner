@@ -61,6 +61,15 @@ enum class Kind(private val en: String, val color: Color) {
     val label: String get() = tr(en)
 
     companion object {
+        /** Folders alternate between shades of the folder blue so neighbouring blocks stand apart
+         *  (same shades as the Linux app). */
+        fun folderShade(i: Int): Color {
+            val s = floatArrayOf(0f, 0.18f, -0.12f, 0.32f)[i % 4]
+            fun f(v: Float) = if (s >= 0f) v + (1f - v) * s else v * (1f + s)
+            val c = Folder.color
+            return Color(f(c.red), f(c.green), f(c.blue))
+        }
+
         fun of(f: File): Kind {
             if (f.isDirectory) return Folder
             return when (f.extension.lowercase()) {

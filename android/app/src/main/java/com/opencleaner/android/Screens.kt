@@ -486,6 +486,7 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
             }
             shown.forEachIndexed { i, e ->
                 val r = rects.getOrNull(i) ?: return@forEachIndexed
+                val kind = Kind.of(e.file)
                 val w = with(density) { (r.w - 2f).coerceAtLeast(0f).toDp() }
                 val h = with(density) { (r.h - 2f).coerceAtLeast(0f).toDp() }
                 Box(
@@ -493,7 +494,7 @@ private fun StorageMap(entries: List<Entry>, selected: Set<String>, firstFocus: 
                         .offset { IntOffset((r.x + 1f).roundToInt(), (r.y + 1f).roundToInt()) }
                         .size(w, h)
                         .clip(RoundedCornerShape(3.dp))
-                        .background(Kind.of(e.file).color)
+                        .background(if (kind == Kind.Folder) Kind.folderShade(i) else kind.color)
                         .then(if (e.file.path in selected) Modifier.border(3.dp, Color.White, RoundedCornerShape(3.dp)) else Modifier)
                         .then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
                         .focusRing()

@@ -27,6 +27,19 @@ static class Treemap
         new[] { ".zip", ".iso", ".7z", ".rar", ".tar", ".gz", ".cab", ".msi" },
     };
 
+    private static readonly double[] FolderShades = { 0, 0.18, -0.12, 0.32 };
+
+    /// <summary>Block color: the kind's color, with folders alternating between shades of the folder blue
+    /// so neighbouring blocks stand apart (same shades as the Linux app).</summary>
+    public static Color ColorFor(string path, bool isDir, int i)
+    {
+        var c = Kinds[KindOf(path, isDir)].Color;
+        if (!isDir) return c;
+        double s = FolderShades[i % FolderShades.Length];
+        byte Shade(byte v) => (byte)Math.Round(s >= 0 ? v + (255 - v) * s : v * (1 + s));
+        return Color.FromArgb(255, Shade(c.R), Shade(c.G), Shade(c.B));
+    }
+
     /// <summary>Index into <see cref="Kinds"/>.</summary>
     public static int KindOf(string path, bool isDir)
     {
