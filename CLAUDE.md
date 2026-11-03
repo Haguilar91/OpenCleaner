@@ -28,9 +28,10 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 | Android | Two flavors: `phone` (minSdk 30, `com.opencleaner.android`) and `tv` (minSdk 28, `com.opencleaner.tv`, leanback launcher + banner, `IS_TV` BuildConfig). 1.3 phone APK: preview, player and map tried on a Pixel. TV APK driven with D-pad on the Google TV emulator (API 31): rail, focus ring, list/map/Apps, OK-menu on map blocks; Android 9 storage path untested (needs a real Fire OS 7 device) |
 | Linux binary | `build_release_docker.sh`: x86_64 + arm64 single files (~28 MB, Debian 12 base). Open the window on systems without GTK/Python (need the host's Wayland/X11/GL libs). Media playback inside the binary untested |
 
-Highest-value next steps: exercise the real cleaning flows on Windows (WinForms and WinUI) and
-macOS with actual junk; add Steam rows (shader cache, browser cache, partial downloads) to the Linux app (macOS and
-Windows already have them).
+Highest-value next steps: build and run the 1.5 changes on macOS, Windows and Android (written on
+Linux, only WinForms compiled); exercise the real cleaning flows on Windows (WinForms and WinUI) and
+macOS with actual junk. Plan and findings: `docs/releases/1.5.md` and the "OpenCleaner 1.5:
+improvements" doc (https://claude.ai/artifact/E43iabXhcpxcnvteqh9kqw).
 
 ## Shared design rules (keep all apps consistent)
 
@@ -48,7 +49,11 @@ Windows already have them).
   WhatsApp sent copies, large files.
 - Each cleaning item can only delete inside its own allowed folders; anything else is refused
   (Linux/macOS: inside `$HOME`; Windows: per-item roots; Android: shared storage and own cache,
-  never `Android/data` or `Android/obb`). Files in use are skipped and counted, never forced.
+  never `Android/data` or `Android/obb`). Files in use are skipped and counted, never forced, and the
+  finish message says "{0} file(s) were in use and skipped." (Linux `remove_tree`, macOS `FS.removeTree`,
+  Windows `Util.DeleteTree`, Android `Scanners.clean`).
+- **A folder the app may not read is never shown as "Clean"**: it is a red "Scan failed" row (macOS:
+  `ScanError.needsFullDiskAccess` with an "Open Settings" button; Android waits for All files access).
 - Disk usage deletes follow a setting: **Move to Trash (default)** or Delete permanently (remembered:
   macOS UserDefaults, Linux `~/.config/opencleaner/settings.json`, WinUI `%AppData%\OpenCleaner\settings.txt`,
   WinForms `HKCU\Software\OpenCleaner`). Permanent: Linux/macOS only inside `$HOME`; Windows refuses drive
