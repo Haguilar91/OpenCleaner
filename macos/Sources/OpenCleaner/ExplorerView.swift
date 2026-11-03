@@ -41,6 +41,7 @@ final class ExplorerModel: ObservableObject {
     @Published var sort = SortMode.size
     @Published var topN = 0          // 0 = show all
     private var gen = 0
+    private var measureTask: Task<Void, Never>?
 
     var total: Int64 { entries.reduce(0) { $0 + ($1.size ?? 0) } }
     var maxSize: Int64 { max(visible.compactMap(\.size).max() ?? 1, 1) }
@@ -94,13 +95,15 @@ final class ExplorerModel: ObservableObject {
         itemCount = urls.count
         guard !urls.isEmpty else { measuring = false; return }
         measuring = true
-        Task.detached { [weak self] in
+        measureTask?.cancel()          // stop measuring the folder we are leaving
+        measureTask = Task.detached { [weak self] in
             await withTaskGroup(of: (URL, Int64).self) { group in
                 var it = urls.makeIterator()
-                for _ in 0..<4 { if let u = it.next() { group.addTask { (u, FS.size(u)) } } }
+                for _ in 0..<4 { if let u = it.next() { group.addTask { (u, FS.size(u, sameVolume: true)) } } }
                 while let (u, s) = await group.next() {
+                    if Task.isCancelled { group.cancelAll(); break }
                     await self?.setSize(g, u, s)
-                    if let n = it.next() { group.addTask { (n, FS.size(n)) } }
+                    if let n = it.next() { group.addTask { (n, FS.size(n, sameVolume: true)) } }
                 }
             }
             await self?.finish(g)
@@ -124,8 +127,8 @@ final class ExplorerModel: ObservableObject {
             do {
                 if deleteMode == .trash {
                     try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-                } else {
-                    try FS.safeRemove(url)
+                } else if try FS.safeRemove(url) > 0 {
+                    failed.append("\(url.lastPathComponent): " + tr("some files were in use and skipped"))
                 }
             } catch {
                 failed.append("\(url.lastPathComponent): \(error.localizedDescription)")

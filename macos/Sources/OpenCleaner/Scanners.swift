@@ -12,6 +12,18 @@ struct CleanItem: Identifiable, Sendable {
     var note = ""
     var empty = false              // checked, nothing to clean
     var failed = false
+    var settingsURL: URL? = nil    // failed row: System Settings page that fixes it (Full Disk Access)
+}
+
+/// A scan that could not read what it needs. Shown as a red "Scan failed" row, never as "Clean".
+enum ScanError: LocalizedError {
+    case needsFullDiskAccess
+
+    var errorDescription: String? {
+        tr("Needs Full Disk Access: allow OpenCleaner in System Settings > Privacy & Security > Full Disk Access, then rescan.")
+    }
+
+    static let fullDiskAccessPage = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
 }
 
 enum Scanners {
@@ -19,7 +31,7 @@ enum Scanners {
     static var lib: URL { URL(fileURLWithPath: home).appendingPathComponent("Library") }
 
     // (scanner, group, label shown when nothing is found)
-    static let all: [(() -> [CleanItem], String, String)] = [
+    static let all: [(() throws -> [CleanItem], String, String)] = [
         (homebrewCache, "Homebrew", tr("Download cache and old versions")),
         (homebrewOrphans, "Homebrew", tr("Unneeded dependencies")),
         (logs, tr("System junk"), tr("User logs and crash reports")),
@@ -34,23 +46,33 @@ enum Scanners {
     static func runAll() -> [CleanItem] {
         var out: [CleanItem] = []
         for (fn, group, label) in all {
-            let found = fn()
-            out += found.isEmpty
-                ? [CleanItem(group: group, title: label, subtitle: tr("Nothing to clean"), size: 0, empty: true)]
-                : found
+            do {
+                let found = try fn()
+                out += found.isEmpty
+                    ? [CleanItem(group: group, title: label, subtitle: tr("Nothing to clean"), size: 0, empty: true)]
+                    : found
+            } catch {
+                var row = CleanItem(group: group, title: label, subtitle: tr("Scan failed: {0}", error.localizedDescription),
+                                    size: nil, empty: true, failed: true)
+                if error is ScanError { row.settingsURL = ScanError.fullDiskAccessPage }
+                out.append(row)
+            }
         }
         return out
     }
 
-    static func clean(_ item: CleanItem) -> String? {
+    /// Deletes the item's files and runs its command. Returns an error message (nil when it worked)
+    /// and how many files were skipped because they were in use or protected.
+    static func clean(_ item: CleanItem) -> (error: String?, skipped: Int) {
+        var skipped = 0
         for p in item.paths {
-            do { try FS.safeRemove(p) } catch { return error.localizedDescription }
+            do { skipped += try FS.safeRemove(p) } catch { return (error.localizedDescription, skipped) }
         }
         if let cmd = item.command {
             let r = Shell.run(cmd)
-            if r.status != 0 { return r.out.trimmingCharacters(in: .whitespacesAndNewlines) }
+            if r.status != 0 { return (r.out.trimmingCharacters(in: .whitespacesAndNewlines), skipped) }
         }
-        return nil
+        return (nil, skipped)
     }
 
     // MARK: Homebrew
@@ -106,9 +128,9 @@ enum Scanners {
         }.sorted { ($0.size ?? 0) > ($1.size ?? 0) }
     }
 
-    static func trash() -> [CleanItem] {
+    static func trash() throws -> [CleanItem] {
         let dir = URL(fileURLWithPath: home).appendingPathComponent(".Trash")
-        let kids = FS.children(dir)
+        let kids = try FS.childrenOrThrow(dir)
         let size = kids.reduce(Int64(0)) { $0 + FS.size($1) }
         if kids.isEmpty || size < 1024 * 1024 { return [] }
         return [CleanItem(group: tr("System junk"), title: tr("Trash"),
@@ -153,11 +175,8 @@ enum Scanners {
 
     static var steamRoot: URL { lib.appendingPathComponent("Application Support/Steam") }
 
-    /// Game name from the Steam store, cached on disk. Nil when offline.
-    static func steamName(_ id: String) -> String? {
-        let cacheURL = lib.appendingPathComponent("Application Support/OpenCleaner/steam_names.json")
-        var cache = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: cacheURL))) ?? [:]
-        if let v = cache[id] { return v }
+    /// One store lookup. Nil when offline or blocked.
+    private static func fetchSteamName(_ id: String) -> String? {
         guard let url = URL(string: "https://store.steampowered.com/api/appdetails?appids=\(id)&filters=basic")
         else { return nil }
         var req = URLRequest(url: url)
@@ -168,14 +187,43 @@ enum Scanners {
         _ = sem.wait(timeout: .now() + 6)
         guard let data = box.data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        var name = tr("App {0} (not in Steam store)", id)
         if let entry = json[id] as? [String: Any], entry["success"] as? Bool == true,
-           let d = entry["data"] as? [String: Any], let n = d["name"] as? String { name = n }
-        cache[id] = name
-        try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? JSONEncoder().encode(cache).write(to: cacheURL)
-        return name
+           let d = entry["data"] as? [String: Any], let n = d["name"] as? String { return n }
+        return tr("App {0} (not in Steam store)", id)
+    }
+
+    private final class Names: @unchecked Sendable {
+        let lock = NSLock()
+        var found: [String: String] = [:]
+        var failed: [String] = []
+    }
+
+    /// Game names from the Steam store, cached on disk and fetched several at once. Ids that could not
+    /// be looked up (offline) are retried after a day, not on every scan.
+    static func steamNames(_ ids: [String]) -> [String: String] {
+        let cacheURL = lib.appendingPathComponent("Application Support/OpenCleaner/steam_names.json")
+        var cache = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: cacheURL))) ?? [:]
+        let now = Date().timeIntervalSince1970
+        let todo = ids.filter { id in
+            cache[id] == nil && now - (Double(cache["!fail:" + id] ?? "") ?? 0) > 86400
+        }
+        if !todo.isEmpty {
+            let names = Names()
+            DispatchQueue.concurrentPerform(iterations: todo.count) { i in
+                let name = fetchSteamName(todo[i])
+                names.lock.lock()
+                if let name { names.found[todo[i]] = name } else { names.failed.append(todo[i]) }
+                names.lock.unlock()
+            }
+            for (id, name) in names.found { cache[id] = name; cache["!fail:" + id] = nil }
+            for id in names.failed { cache["!fail:" + id] = String(Int(now)) }
+            try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try? JSONEncoder().encode(cache).write(to: cacheURL)
+        }
+        var out: [String: String] = [:]
+        for id in ids { out[id] = cache[id] }
+        return out
     }
 
     static func steam() -> [CleanItem] {
@@ -213,17 +261,20 @@ enum Scanners {
         var items: [CleanItem] = []
 
         // shader caches of games that are no longer installed
+        var shaders: [(id: String, dir: URL, size: Int64)] = []
         for l in libs where inHome(l) {
             for dir in FS.children(l.appendingPathComponent("steamapps/shadercache")) {
                 let id = dir.lastPathComponent
                 guard id.allSatisfy(\.isNumber), !installed.contains(id) else { continue }
                 let size = FS.size(dir)
-                guard size >= 1024 * 1024 else { continue }
-                let name = steamName(id)
-                items.append(CleanItem(group: "Steam", title: tr("Shader cache: {0}", name ?? "app \(id)"),
-                                       subtitle: tr("Game not installed (app {0}). Steam rebuilds this if you reinstall.", id) + warn,
-                                       size: size, selected: true, paths: [dir]))
+                if size >= 1024 * 1024 { shaders.append((id, dir, size)) }
             }
+        }
+        let names = steamNames(shaders.map { $0.id })
+        for s in shaders {
+            items.append(CleanItem(group: "Steam", title: tr("Shader cache: {0}", names[s.id] ?? "app \(s.id)"),
+                                   subtitle: tr("Game not installed (app {0}). Steam rebuilds this if you reinstall.", s.id) + warn,
+                                   size: s.size, selected: true, paths: [s.dir]))
         }
 
         let html = root.appendingPathComponent("config/htmlcache")
@@ -252,9 +303,9 @@ enum Scanners {
     }
 
     // MARK: device backups
-    static func iosBackups() -> [CleanItem] {
+    static func iosBackups() throws -> [CleanItem] {
         let dir = lib.appendingPathComponent("Application Support/MobileSync/Backup")
-        return FS.children(dir).filter { FS.isRealDir($0) }.map { url in
+        return try FS.childrenOrThrow(dir).filter { FS.isRealDir($0) }.map { url in
             let info = (try? Data(contentsOf: url.appendingPathComponent("Info.plist")))
                 .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
             let name = info?["Device Name"] as? String ?? url.lastPathComponent

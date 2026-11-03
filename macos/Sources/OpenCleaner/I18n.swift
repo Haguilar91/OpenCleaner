@@ -170,4 +170,11 @@ private let es: [String: String] = [
     "Close": "Cerrar",
     "Click a file to preview it.": "Haz clic en un archivo para verlo.",
     "folder": "carpeta",
+    // 1.5: honest cleaning
+    "Scan failed: {0}": "Falló el análisis: {0}",
+    "Needs Full Disk Access: allow OpenCleaner in System Settings > Privacy & Security > Full Disk Access, then rescan.":
+        "Necesita acceso total al disco: permite OpenCleaner en Ajustes del Sistema > Privacidad y seguridad > Acceso total al disco y vuelve a analizar.",
+    "Open Settings": "Abrir Ajustes",
+    "{0} file(s) were in use and skipped.": "Se omitieron {0} archivo(s) porque estaban en uso.",
+    "some files were in use and skipped": "se omitieron algunos archivos porque estaban en uso",
 ]

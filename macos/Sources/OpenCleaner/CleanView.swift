@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CleanView: View {
@@ -103,6 +104,9 @@ struct CleanView: View {
             }
             Spacer()
             if item.empty {
+                if let url = item.settingsURL {
+                    Button(tr("Open Settings")) { NSWorkspace.shared.open(url) }
+                }
                 Text(item.failed ? tr("Scan failed") : tr("status|Clean") + " \u{2713}")
                     .foregroundStyle(item.failed ? Color.red : Color.green)
             } else {

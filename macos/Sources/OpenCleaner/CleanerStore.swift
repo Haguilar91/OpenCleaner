@@ -67,15 +67,18 @@ final class CleanerStore: ObservableObject {
         guard !todo.isEmpty, !busy else { return }
         busy = true; busyText = tr("Cleaning…")
         let before = updateFree()
-        let failures: [String] = await Task.detached(priority: .userInitiated) {
-            todo.compactMap { item in Scanners.clean(item).map { "\(item.title): \($0.prefix(200))" } }
+        let results = await Task.detached(priority: .userInitiated) {
+            todo.map { item in (item.title, Scanners.clean(item)) }
         }.value
         busy = false
         let freed = updateFree() - before
+        let failures = results.compactMap { r in r.1.error.map { "\(r.0): \($0.prefix(200))" } }
+        let skipped = results.reduce(0) { $0 + $1.1.skipped }
+        let inUse = skipped > 0 ? "\n\n" + tr("{0} file(s) were in use and skipped.", skipped) : ""
         if failures.isEmpty {
-            message = tr("Cleaning finished") + (freed > 0 ? " · " + tr("freed {0}", fmt(freed)) : "")
+            message = tr("Cleaning finished") + (freed > 0 ? " · " + tr("freed {0}", fmt(freed)) : "") + inUse
         } else {
-            message = tr("Some items failed:") + "\n" + failures.joined(separator: "\n")
+            message = tr("Some items failed:") + "\n" + failures.joined(separator: "\n") + inUse
         }
         await scan()
     }
