@@ -203,7 +203,6 @@ ES = {
     "Steam leftovers": "Restos de Steam",
     "Proton prefix, app {0}. Game not installed; may hold Windows save games.":
         "Prefijo de Proton, app {0}. El juego no está instalado; puede tener partidas guardadas de Windows.",
-    "Orphaned Proton prefixes": "Prefijos de Proton huérfanos",
     # preview
     "Move to Trash": "Mover a la papelera",
     "Delete permanently": "Eliminar para siempre",
@@ -284,6 +283,19 @@ ES = {
     "{0} uninstalled": "{0} se desinstaló",
     "{0} folder(s) deleted": "se eliminaron {0} carpeta(s)",
     "Could not uninstall": "No se pudo desinstalar",
+    # cleaning and Steam (same Spanish as macOS and Windows)
+    "{0} file(s) were in use and skipped.": "Se omitieron {0} archivo(s) porque estaban en uso.",
+    "Shader cache: {0}": "Caché de sombreadores: {0}",
+    "app {0}": "app {0}",
+    "Game not installed (app {0}). Steam rebuilds this if you reinstall.":
+        "El juego no está instalado (app {0}). Steam la vuelve a crear si lo reinstalas.",
+    "Steam browser cache": "Caché del navegador de Steam",
+    "Steam is running. Close it first, or in-use files are skipped.":
+        "Steam está abierto. Ciérralo primero, o se omitirán los archivos en uso.",
+    "Cache of the Steam store and community pages": "Caché de las páginas de la tienda y la comunidad de Steam",
+    "Unfinished game downloads": "Descargas de juegos sin terminar",
+    "Partial downloads. Don't clean while a download you want to resume is paused.":
+        "Descargas parciales. No limpies mientras esté en pausa una descarga que quieras continuar.",
     # --install
     "Scan and clean reclaimable disk space": "Analiza y limpia el espacio que se puede recuperar",
     "Added OpenCleaner to the app menu: {0}": "OpenCleaner se añadió al menú de aplicaciones: {0}",
@@ -409,11 +421,20 @@ def detect_distro(osrel=None, exists=os.path.exists, which=shutil.which):
 DISTRO = detect_distro()
 
 
-def du_bytes_x(path):
-    """Size of a folder tree, staying on one filesystem."""
-    r = run(["du", "-sxb", "--", path])
+def du_bytes_x(path, procs=None):
+    """Size of a folder tree, staying on one filesystem. With `procs` (a set), the running du is kept
+    there so the caller can kill it when the result is no longer wanted."""
+    p = subprocess.Popen(["du", "-sxb", "--", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                         text=True, env=host_env())
+    if procs is not None:
+        procs.add(p)
     try:
-        return int(r.stdout.split()[0])
+        out = p.communicate()[0]
+    finally:
+        if procs is not None:
+            procs.discard(p)
+    try:
+        return int(out.split()[0]) if p.returncode in (0, 1) else None   # 1 = some folders unreadable
     except (IndexError, ValueError):
         return None
 
@@ -471,7 +492,7 @@ def scan_pacman_cache():
     script = ("[ -e /var/lib/pacman/db.lck ] && { echo 'pacman is busy'; exit 1; }; "
               "paccache -rk1; paccache -ruk0; rm -rf /var/cache/pacman/pkg/download-*")
     return [Item(tr("System"), tr("Pacman package cache"), note, total if found else None,
-                 True, root_script=script)]
+                 found, root_script=script)]   # unticked when only root-owned downloads (size unknown)
 
 
 def scan_orphans():
@@ -608,62 +629,118 @@ def scan_dnf_unneeded():
 NAME_CACHE = os.path.join(HOME, ".cache", "opencleaner", "steam_names.json")
 
 
-def steam_name(appid):
-    """Game name for a Steam app id: local cache first, then the Steam store API."""
+def steam_names(ids):
+    """Game names for Steam app ids: disk cache first, then the Steam store API, several at once.
+    Ids that could not be looked up (offline, rate limited) are retried after a day, not on every scan."""
     import json
+    import time
     import urllib.request
+    from concurrent.futures import ThreadPoolExecutor
     try:
         cache = json.load(open(NAME_CACHE))
     except (OSError, ValueError):
         cache = {}
-    key = str(appid)
-    if key in cache:
-        return cache[key]
-    try:
-        url = f"https://store.steampowered.com/api/appdetails?appids={key}&filters=basic"
-        with urllib.request.urlopen(url, timeout=4) as r:
-            data = json.load(r)[key]
-        name = data["data"]["name"] if data.get("success") else None
-    except Exception:  # noqa: BLE001  offline, delisted, rate-limited
-        return None
-    cache[key] = name or tr("App {0} (not in Steam store, maybe a tool)", key)
-    try:
-        os.makedirs(os.path.dirname(NAME_CACHE), exist_ok=True)
-        json.dump(cache, open(NAME_CACHE, "w"))
-    except OSError:
-        pass
-    return cache[key]
+    now = time.time()
+    todo = [str(i) for i in ids if str(i) not in cache and now - cache.get("!fail:" + str(i), 0) > 86400]
+
+    def fetch(key):
+        try:
+            url = f"https://store.steampowered.com/api/appdetails?appids={key}&filters=basic"
+            with urllib.request.urlopen(url, timeout=4) as r:
+                data = json.load(r)[key]
+            return key, (data["data"]["name"] if data.get("success") else ""), True
+        except Exception:  # noqa: BLE001  offline, delisted, rate-limited
+            return key, None, False
+
+    if todo:
+        with ThreadPoolExecutor(8) as ex:
+            for key, name, ok in ex.map(fetch, todo):
+                if ok:
+                    cache[key] = name or tr("App {0} (not in Steam store, maybe a tool)", key)
+                    cache.pop("!fail:" + key, None)
+                else:
+                    cache["!fail:" + key] = now
+        try:
+            os.makedirs(os.path.dirname(NAME_CACHE), exist_ok=True)
+            json.dump(cache, open(NAME_CACHE, "w"))
+        except OSError:
+            pass
+    return {i: cache.get(str(i)) for i in ids}
 
 
-def scan_steam_prefixes():
-    """Proton prefixes for Steam games that are no longer installed anywhere."""
-    steamapps = os.path.join(HOME, ".local/share/Steam/steamapps")
-    compat = os.path.join(steamapps, "compatdata")
-    if not os.path.isdir(compat):
-        return []
-    try:
-        vdf = open(os.path.join(steamapps, "libraryfolders.vdf")).read()
-    except OSError:
-        return []
-    libs = re.findall(r'"path"\s+"([^"]+)"', vdf)
-    missing = [l for l in libs if not os.path.isdir(l)]
-    installed = set()
-    for lib in libs:
-        for f in glob.glob(os.path.join(lib, "steamapps", "appmanifest_*.acf")):
-            m = re.search(r"appmanifest_(\d+)", f)
-            if m:
-                installed.add(int(m.group(1)))
-    warn = " " + tr("Some Steam library drives are not mounted, so this game may live there.") if missing else ""
-    items = []
-    for d in sorted(os.listdir(compat)):
-        # non-Steam shortcuts use huge ids; leave those alone
-        if d.isdigit() and 0 < int(d) < 2**31 and int(d) not in installed:
-            p = os.path.join(compat, d)
-            name = steam_name(int(d))
-            title = f"{name}" if name else tr("Unknown game (app {0})", d)
-            items.append(Item(tr("Steam leftovers"), title,
-                              tr("Proton prefix, app {0}. Game not installed; may hold Windows save games.", d) + warn,
-                              du_bytes(p), False, paths=[p]))
+STEAM_ROOTS = [os.path.join(HOME, ".local/share/Steam"),                                  # native
+               os.path.join(HOME, ".var/app/com.valvesoftware.Steam/.local/share/Steam")]  # Flatpak
+
+
+def _in_home(path):
+    return (os.path.realpath(path) + os.sep).startswith(os.path.realpath(HOME) + os.sep)
+
+
+def scan_steam():
+    """Leftovers of Steam games that are no longer installed in any library (native and Flatpak
+    Steam): Proton prefixes, shader caches, plus the Steam browser cache and unfinished downloads.
+    Libraries outside the home folder are skipped, since deletes are limited to it."""
+    items, prefixes, shaders = [], [], []
+    running = run(["pgrep", "-x", "steam"]).returncode == 0
+    for root in STEAM_ROOTS:
+        steamapps = os.path.join(root, "steamapps")
+        if not os.path.isdir(steamapps):
+            continue
+        try:
+            vdf = open(os.path.join(steamapps, "libraryfolders.vdf")).read()
+        except OSError:
+            vdf = ""
+        libs = [root] + [p for p in re.findall(r'"path"\s+"([^"]+)"', vdf)
+                         if os.path.realpath(p) != os.path.realpath(root)]
+        missing = any(not os.path.isdir(p) for p in libs)
+        libs = [p for p in libs if os.path.isdir(p)]
+        installed = set()
+        for lib in libs:
+            for f in glob.glob(os.path.join(lib, "steamapps", "appmanifest_*.acf")):
+                m = re.search(r"appmanifest_(\d+)", f)
+                if m:
+                    installed.add(int(m.group(1)))
+        warn = " " + tr("Some Steam library drives are not mounted, so this game may live there.") if missing else ""
+        partial = []
+        for lib in libs:
+            if not _in_home(lib):
+                continue
+            # non-Steam shortcuts use huge ids; leave those alone
+            orphan = lambda d: d.isdigit() and 0 < int(d) < 2**31 and int(d) not in installed  # noqa: E731
+            for kind, out in (("compatdata", prefixes), ("shadercache", shaders)):
+                folder = os.path.join(lib, "steamapps", kind)
+                for d in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+                    if orphan(d):
+                        out.append((int(d), os.path.join(folder, d), warn))
+            for sub in ("downloading", "temp"):
+                folder = os.path.join(lib, "steamapps", sub)
+                if os.path.isdir(folder):
+                    partial += [os.path.join(folder, n) for n in os.listdir(folder)]
+        size = sum(du_bytes(p) or 0 for p in partial)
+        if size >= 10 * 1024**2:
+            items.append(Item(tr("Steam leftovers"), tr("Unfinished game downloads"),
+                              tr("Partial downloads. Don't clean while a download you want to resume is paused."),
+                              size, False, paths=partial))
+        html = os.path.join(root, "config", "htmlcache")
+        kids = [os.path.join(html, n) for n in os.listdir(html)] if os.path.isdir(html) else []
+        size = sum(du_bytes(p) or 0 for p in kids)
+        if size >= CACHE_MIN_BYTES:
+            items.append(Item(tr("Steam leftovers"), tr("Steam browser cache"),
+                              tr("Steam is running. Close it first, or in-use files are skipped.") if running
+                              else tr("Cache of the Steam store and community pages"),
+                              size, False, paths=kids))
+    names = steam_names([i for i, _, _ in prefixes + shaders])
+    for appid, p, warn in prefixes:
+        name = names.get(appid)
+        items.append(Item(tr("Steam leftovers"), name or tr("Unknown game (app {0})", appid),
+                          tr("Proton prefix, app {0}. Game not installed; may hold Windows save games.", appid) + warn,
+                          du_bytes(p), False, paths=[p]))
+    for appid, p, warn in shaders:
+        size = du_bytes(p) or 0
+        if size >= 1024**2:
+            items.append(Item(tr("Steam leftovers"), tr("Shader cache: {0}", names.get(appid) or tr("app {0}", appid)),
+                              tr("Game not installed (app {0}). Steam rebuilds this if you reinstall.", appid) + warn,
+                              size, True, paths=[p]))
     return items
 
 
@@ -686,7 +763,7 @@ def build_scanners(d):
           (scan_flatpak, tr("Apps"), tr("Unused Flatpak runtimes")),
           (scan_browser_backups, tr("Browser crash-recovery backups"), tr("Crash-recovery backups")),
           (scan_user_cache, tr("Large app caches (~/.cache)"), tr("Large caches and Trash")),
-          (scan_steam_prefixes, tr("Steam leftovers"), tr("Orphaned Proton prefixes"))]
+          (scan_steam, tr("Steam leftovers"), tr("Steam leftovers"))]
     return s
 
 
@@ -694,35 +771,65 @@ SCANNERS = build_scanners(DISTRO)
 
 
 # ---------------------------------------------------------------- cleaning
+def remove_tree(path):
+    """Delete a file, link or folder tree without following symlinks. Whatever cannot be deleted
+    (in use, no permission) is skipped, never forced; returns how many entries were skipped."""
+    skipped = []
+
+    def rm(p):
+        try:
+            os.remove(p)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            skipped.append(p)
+
+    if os.path.islink(path) or not os.path.isdir(path):
+        rm(path)
+        return len(skipped)
+    for root, dirs, files in os.walk(path, topdown=False, onerror=lambda e: skipped.append(e.filename)):
+        for name in files + [d for d in dirs if os.path.islink(os.path.join(root, d))]:
+            rm(os.path.join(root, name))
+        try:
+            os.rmdir(root)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            if not os.listdir(root):     # empty but still refused: count it; else its contents already were
+                skipped.append(root)
+    return len(skipped)
+
+
 def safe_remove(path):
-    """Delete a path only if it is inside $HOME; never follow symlinks."""
+    """Delete a path only if it is inside $HOME; never follow symlinks. Returns how many entries were
+    skipped because they were in use or protected."""
+    home = os.path.realpath(HOME)
     real_parent = os.path.realpath(os.path.dirname(path))
-    if not (real_parent + os.sep).startswith(HOME + os.sep) or real_parent == HOME:
+    if not (real_parent + os.sep).startswith(home + os.sep) or real_parent == home:
         raise PermissionError(tr("refusing to delete outside home: {0}", path))
-    if os.path.islink(path) or os.path.isfile(path):
-        os.remove(path)
-    elif os.path.isdir(path):
-        shutil.rmtree(path)
-        if os.path.basename(path) in ("files", "info"):  # keep trash skeleton
-            os.makedirs(path, exist_ok=True)
+    skipped = remove_tree(path)
+    if os.path.basename(path) in ("files", "info") and not os.path.exists(path):  # keep trash skeleton
+        os.makedirs(path, exist_ok=True)
+    return skipped
 
 
 def clean_item(item):
-    """Return (ok, message)."""
+    """Return (ok, message, files skipped because they were in use)."""
+    skipped = 0
     try:
         for p in item.paths:
-            safe_remove(p)
+            skipped += safe_remove(p)
         if item.root_script:
             r = run(["pkexec", "sh", "-c", item.root_script])
             if r.returncode != 0:
-                return False, (r.stderr or r.stdout).strip() or tr("cancelled or failed")
+                return False, (r.stderr or r.stdout).strip() or tr("cancelled or failed"), skipped
         if item.user_cmd:
             r = run(item.user_cmd)
             if r.returncode != 0:
-                return False, (r.stderr or r.stdout).strip() or tr("failed")
-        return True, "done"
+                return False, (r.stderr or r.stdout).strip() or tr("failed"), skipped
+        return True, "done", skipped
     except Exception as e:  # noqa: BLE001
-        return False, str(e)
+        return False, str(e), skipped
 
 
 # ---------------------------------------------------------------- UI
@@ -1033,6 +1140,11 @@ class Explorer(Gtk.Box):
         self.root = HOME
         self.path = HOME
         self.sizes = {}
+        self.size_cache = {}    # path -> size for this session; cleared on refresh, delete and clean
+        self.procs = set()      # running du processes, killed when leaving a folder
+        self.bars = []
+        self.pending = 0
+        self.started = False
         self.gen = 0
 
         bar = Gtk.Box(spacing=6, margin_top=8, margin_bottom=8, margin_start=12, margin_end=12)
@@ -1122,7 +1234,12 @@ class Explorer(Gtk.Box):
         self.sel_bar.pack_start(clear)
         self.sel_bar.pack_end(self.del_btn)
         self.append(self.sel_bar)
-        self.go(HOME)
+
+    def start(self):
+        """Measure Home the first time the tab is opened, not at launch (it competes with the Clean scan)."""
+        if not self.started:
+            self.started = True
+            self.go(self.path)
 
     # -- selection (list checkboxes and right-click in the map share it)
     def delete_label(self):
@@ -1244,7 +1361,10 @@ class Explorer(Gtk.Box):
         self.go(path)
 
     def reload(self):
-        self.go(self.path)
+        """Measure again from scratch (refresh button, after a delete or a clean)."""
+        self.size_cache.clear()
+        if self.started:
+            self.go(self.path)
 
     def go(self, path):
         if not path.startswith(self.root):
@@ -1252,6 +1372,8 @@ class Explorer(Gtk.Box):
         self.path = path
         self.gen += 1
         gen = self.gen
+        for p in list(self.procs):   # stop measuring the folder we are leaving
+            p.kill()
         self.path_label.set_label(path)
         self.up_btn.set_sensitive(path != self.root)
         self.sizes = {}
@@ -1286,12 +1408,21 @@ class Explorer(Gtk.Box):
             self.status.set_label(tr("Empty folder"))
         self.map_area.queue_draw()
 
+        cached = [e for e in entries if e.path in self.size_cache]
+        for e in cached:
+            self._got_size(gen, e.path, self.size_cache[e.path])
+        entries = [e for e in entries if e.path not in self.size_cache]
+        if not entries:
+            return
+
         def work():
             from concurrent.futures import ThreadPoolExecutor, as_completed
             def measure(e):
+                if self.gen != gen:                     # left this folder before its turn came
+                    return e.path, None
                 try:
                     if e.is_dir(follow_symlinks=False):
-                        return e.path, du_bytes_x(e.path)
+                        return e.path, du_bytes_x(e.path, self.procs)
                     return e.path, e.stat(follow_symlinks=False).st_size
                 except OSError:
                     return e.path, None
@@ -1338,6 +1469,8 @@ class Explorer(Gtk.Box):
     def _got_size(self, gen, path, size):
         if gen != self.gen:
             return
+        if size is not None:
+            self.size_cache[path] = size
         self.sizes[path] = size if size is not None else 0
         self.max_size = max(self.max_size, size or 0)
         for row in self.bars:
@@ -1380,7 +1513,9 @@ class Explorer(Gtk.Box):
             for path in paths:
                 try:
                     if permanent:
-                        safe_remove(path)             # only inside the home folder
+                        n = safe_remove(path)         # only inside the home folder
+                        if n:
+                            raise OSError(tr("{0} file(s) were in use and skipped.", n))
                     else:
                         r = run(["gio", "trash", "--", path])
                         if r.returncode != 0:
@@ -1665,8 +1800,8 @@ class AppsPage(Gtk.Box):
             if ok:
                 for path in folders:
                     try:
-                        safe_remove(path)          # permanent, and only inside the home folder
-                        moved += 1
+                        if safe_remove(path) == 0:  # permanent, only inside home; count fully deleted ones
+                            moved += 1
                     except Exception:  # noqa: BLE001
                         pass
             GLib.idle_add(self._uninstalled, app, ok, msg, moved)
@@ -1745,6 +1880,8 @@ class Window(Adw.ApplicationWindow):
         self.views.add_titled_with_icon(clean_box, "clean", tr("Clean"), "opencleaner-edit-clear-all-symbolic")
         self.views.add_titled_with_icon(self.explorer, "explore", tr("Disk usage"),
                                         "opencleaner-drive-harddisk-symbolic")
+        self.views.connect("notify::visible-child-name",
+                           lambda v, _p: v.get_visible_child_name() == "explore" and self.explorer.start())
         self.apps_page = AppsPage(self)
         self.views.add_titled_with_icon(self.apps_page, "apps", tr("Apps"), "opencleaner-view-app-grid-symbolic")
         toolbar.set_content(self.views)
@@ -1953,15 +2090,18 @@ class Window(Adw.ApplicationWindow):
     def clean_done(self, results):
         self.busy = False
         self.spinner_page.set_title(tr("Scanning…"))
-        failed = [(it, msg) for it, ok, msg in results if not ok]
+        failed = [(it, msg) for it, ok, msg, _ in results if not ok]
+        skipped = sum(n for *_, n in results)
+        in_use = tr("{0} file(s) were in use and skipped.", skipped) if skipped else ""
         if failed:
-            body = "\n".join(f"• {it.title}: {msg[:200]}" for it, msg in failed)
+            body = "\n".join(f"• {it.title}: {msg[:200]}" for it, msg in failed) + ("\n\n" + in_use if in_use else "")
             dlg = AlertDialog(heading=tr("Some items failed"), body=body)
             dlg.add_response("ok", tr("OK"))
             dlg.present(self)
         else:
             freed = self.update_free() - (self.free_before or 0)
-            msg = tr("Cleaning finished") + (" · " + tr("freed {0}", fmt_size(freed)) if freed > 0 else "")
+            msg = (tr("Cleaning finished") + (" · " + tr("freed {0}", fmt_size(freed)) if freed > 0 else "")
+                   + (" · " + in_use if in_use else ""))
             self.notify(msg)
         self.update_free()
         self.explorer.reload()
