@@ -153,4 +153,11 @@ private val ES = mapOf(
     "Open with..." to "Abrir con...",
     "Tap a file to preview it." to "Toca un archivo para verlo.",
     "folder" to "carpeta",
+    // 1.5
+    "Gallery trash" to "Papelera de la galería",
+    "Gallery trash ({0})" to "Papelera de la galería ({0})",
+    "Photos and videos you deleted in the gallery. Android removes them after 30 days." to
+        "Fotos y videos que borraste en la galería. Android los elimina después de 30 días.",
+    "Duplicate downloads" to "Descargas duplicadas",
+    "Same as {0}, which is kept." to "Igual que {0}, que se conserva.",
 )

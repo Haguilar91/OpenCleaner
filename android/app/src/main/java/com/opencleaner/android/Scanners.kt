@@ -19,6 +19,14 @@ data class CleanItem(
 
 data class CleanResult(val title: String, val skipped: Int, val error: String?)
 
+/** Storage tab state that survives switching tabs (the screen itself is rebuilt each time).
+ *  Sizes are kept for the session and cleared after any delete or clean. */
+object StorageMemory {
+    var path: File? = null
+    var mapMode = false
+    val sizes = java.util.concurrent.ConcurrentHashMap<String, Long>()
+}
+
 fun fmt(bytes: Long?): String {
     if (bytes == null) return tr("size unknown")
     val units = arrayOf("B", "KB", "MB", "GB", "TB")
@@ -64,6 +72,8 @@ object Scanners {
             ScanDef(tr("This app"), tr("OpenCleaner's own cache")) { ownCache(ctx) },
             ScanDef(tr("Junk files"), tr("Thumbnail leftovers")) { thumbnails() },
             ScanDef(tr("Junk files"), tr("Old installer files (.apk) in Downloads")) { oldApks() },
+            ScanDef(tr("Junk files"), tr("Gallery trash")) { galleryTrash() },
+            ScanDef(tr("Junk files"), tr("Duplicate downloads")) { duplicateDownloads() },
             ScanDef(tr("Messaging apps"), tr("WhatsApp sent-media copies")) { whatsappSent() },
             ScanDef(tr("Large files"), tr("Files over 100 MB")) { largeFiles() },
         )
@@ -86,10 +96,54 @@ object Scanners {
         var error: String? = null
         for (f in item.files) {
             if (!allowed(f, ctx)) { error = tr("Refusing to delete {0}", f.path); break }
-            if (!f.deleteRecursively()) skipped++
+            if (!f.deleteRecursively()) {
+                // count what is left (in use or protected), not just "1 folder"
+                skipped += if (f.isDirectory) f.walkBottomUp().count { it.isFile }.coerceAtLeast(1) else 1
+            }
         }
+        StorageMemory.sizes.clear()
         return CleanResult(item.title, skipped, error)
     }
+
+    /** Files the gallery moved to its trash (".trashed-<time>-name", kept 30 days by Android 11+). */
+    private fun galleryTrash(): List<CleanItem> {
+        val dirs = listOf("DCIM", "Pictures", "Movies", "Download", "Music", "Documents").map { File(root(), it) }
+        val files = dirs.flatMap { d ->
+            d.walkTopDown().maxDepth(4).filter { it.isFile && it.name.startsWith(".trashed-") }.toList()
+        }
+        return listOfNotNull(item("gallery-trash", tr("Junk files"), tr("Gallery trash ({0})", files.size),
+            tr("Photos and videos you deleted in the gallery. Android removes them after 30 days."), files))
+    }
+
+    /** Files in Download that are byte-for-byte copies of another file there; the oldest copy is kept. */
+    private fun duplicateDownloads(): List<CleanItem> {
+        val dl = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val files = dl.walkTopDown().maxDepth(3).filter { it.isFile && it.length() >= MB }.toList()
+        val out = ArrayList<CleanItem>()
+        for (sameSize in files.groupBy { it.length() }.values.filter { it.size > 1 }) {
+            for (sameData in sameSize.groupBy { sha256(it) }.filterKeys { it != null }.values.filter { it.size > 1 }) {
+                val keep = sameData.minByOrNull { it.lastModified() } ?: continue
+                for (copy in sameData.filter { it != keep }) {
+                    out += CleanItem("dup:${copy.path}", tr("Junk files"), copy.name,
+                        tr("Same as {0}, which is kept.", keep.name), copy.length(), false, listOf(copy))
+                }
+            }
+        }
+        return out.sortedByDescending { it.size ?: 0 }.take(30)
+    }
+
+    private fun sha256(f: File): String? = try {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { input ->
+            val buf = ByteArray(1 shl 16)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        md.digest().joinToString("") { "%02x".format(it) }
+    } catch (e: Exception) { null }
 
     private fun item(id: String, group: String, title: String, subtitle: String,
                      files: List<File>, selected: Boolean = false): CleanItem? {

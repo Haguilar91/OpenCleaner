@@ -252,29 +252,33 @@ private fun arrange(entries: List<Entry>, sort: SortMode, top: Int): List<Entry>
 fun StorageScreen(onChanged: () -> Unit) {
     val ctx = LocalContext.current
     val root = remember { Scanners.root() }
-    var path by remember { mutableStateOf(root) }
+    var path by remember { mutableStateOf(StorageMemory.path ?: root) }
     var entries by remember { mutableStateOf<List<Entry>>(emptyList()) }
     var reload by remember { mutableIntStateOf(0) }
     var toDelete by remember { mutableStateOf<List<File>>(emptyList()) }   // waiting for confirmation
     var selected by remember { mutableStateOf<Set<String>>(emptySet()) }    // ticked rows / long-pressed blocks
     var preview by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var mapMode by remember { mutableStateOf(false) }
+    var mapMode by remember { mutableStateOf(StorageMemory.mapMode) }
     var sort by remember { mutableStateOf(SortMode.Biggest) }
     var top by remember { mutableIntStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     BackHandler(enabled = path != root) { path = path.parentFile ?: root }
 
+    StorageMemory.path = path            // remembered when switching tabs
+    StorageMemory.mapMode = mapMode
+
     LaunchedEffect(path, reload) {
         val kids = withContext(Dispatchers.IO) { path.listFiles()?.toList() ?: emptyList() }
-        entries = kids.map { Entry(it, null) }
+        entries = kids.map { Entry(it, StorageMemory.sizes[it.path]) }
         coroutineScope {
             val sem = Semaphore(4)
-            for (f in kids) {
+            for (f in kids.filter { StorageMemory.sizes[it.path] == null }) {
                 launch(Dispatchers.IO) {
                     sem.withPermit {
                         val s = Scanners.size(f)
+                        StorageMemory.sizes[f.path] = s
                         withContext(Dispatchers.Main) {
                             entries = entries.map { if (it.file == f) it.copy(size = s) else it }
                         }
@@ -423,6 +427,7 @@ fun StorageScreen(onChanged: () -> Unit) {
                         }
                         if (failed.isNotEmpty()) error = tr("Could not delete {0}", failed.joinToString { it.name })
                         selected = selected - files.map { it.path }.toSet()
+                        StorageMemory.sizes.clear()          // sizes of this folder and its parents changed
                         reload++
                         onChanged()
                     }
