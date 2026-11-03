@@ -255,7 +255,7 @@ public sealed class DiskView : UserControl
         _ = Task.Run(() => Parallel.ForEach(entries, new ParallelOptions { MaxDegreeOfParallelism = 4 }, e =>
         {
             if (gen != myGen) return;
-            long s = Util.Size(e);
+            long s = Util.Size(e, () => gen != myGen);   // stops when we leave the folder
             dq.TryEnqueue(() => SetSize(myGen, e, s));
         }));
     }

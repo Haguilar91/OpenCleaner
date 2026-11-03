@@ -53,12 +53,27 @@ namespace OpenCleaner
         }
 
         // Size of a file or folder tree. Junctions and symlinks count as zero.
+        // OneDrive "online-only" files (Files On-Demand) and offline files take no space on this disk.
+        const int RecallOnDataAccess = 0x400000, Offline = 0x1000;
+
+        static bool CloudOnly(FileAttributes a)
+        {
+            return ((int)a & (RecallOnDataAccess | Offline)) != 0;
+        }
+
         public static long Size(string path)
+        {
+            return Size(path, null);
+        }
+
+        // Size of a file or folder tree on this disk. Junctions, symlinks and cloud-only files count as
+        // zero. stop (may be null) is asked once per folder; when it returns true the walk ends early.
+        public static long Size(string path, Func<bool> stop)
         {
             try
             {
                 FileAttributes a = File.GetAttributes(path);
-                if ((a & FileAttributes.ReparsePoint) != 0) return 0;
+                if ((a & FileAttributes.ReparsePoint) != 0 || CloudOnly(a)) return 0;
                 if ((a & FileAttributes.Directory) == 0) return new FileInfo(path).Length;
             }
             catch { return 0; }
@@ -66,13 +81,19 @@ namespace OpenCleaner
             long total = 0;
             try
             {
+                if (stop != null && stop()) return total;
                 foreach (string f in Directory.GetFiles(path))
                 {
-                    try { total += new FileInfo(f).Length; } catch { }
+                    try
+                    {
+                        FileInfo fi = new FileInfo(f);
+                        if (!CloudOnly(fi.Attributes)) total += fi.Length;
+                    }
+                    catch { }
                 }
                 foreach (string d in Directory.GetDirectories(path))
                 {
-                    total += Size(d);
+                    total += Size(d, stop);
                 }
             }
             catch { }
@@ -132,6 +153,26 @@ namespace OpenCleaner
         public static string Env(string name)
         {
             return Environment.GetEnvironmentVariable(name) ?? "";
+        }
+
+        // True when the service is running (sc.exe prints the state names in English on every Windows).
+        // Unknown counts as running, so the caller restarts it as before.
+        public static bool ServiceRunning(string name)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("sc.exe", "query " + name);
+                psi.CreateNoWindow = true;
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                using (Process p = Process.Start(psi))
+                {
+                    string output = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(10000);
+                    return output.Contains("RUNNING");
+                }
+            }
+            catch { return true; }
         }
 
         public static void RunQuiet(string exe, string args)
@@ -319,8 +360,18 @@ namespace OpenCleaner
                              L.T("Already-installed update files. Windows re-downloads what it needs."),
                              dir, Util.Children(dir), true, true);
             if (it.Size < 20L * 1024 * 1024) return new List<Item>();
-            it.Before = delegate { Util.RunQuiet("net.exe", "stop wuauserv"); Util.RunQuiet("net.exe", "stop bits"); };
-            it.After = delegate { Util.RunQuiet("net.exe", "start bits"); Util.RunQuiet("net.exe", "start wuauserv"); };
+            // restart afterwards only the services that were running before (one may be disabled on purpose)
+            bool wuWasOn = true, bitsWasOn = true;
+            it.Before = delegate
+            {
+                wuWasOn = Util.ServiceRunning("wuauserv"); bitsWasOn = Util.ServiceRunning("bits");
+                Util.RunQuiet("net.exe", "stop wuauserv"); Util.RunQuiet("net.exe", "stop bits");
+            };
+            it.After = delegate
+            {
+                if (bitsWasOn) Util.RunQuiet("net.exe", "start bits");
+                if (wuWasOn) Util.RunQuiet("net.exe", "start wuauserv");
+            };
             return One(it);
         }
 
