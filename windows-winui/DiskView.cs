@@ -36,7 +36,7 @@ public sealed class DiskView : UserControl
         Margin = new Thickness(26, 0, 0, 6),
         Foreground = Ui.Res("TextFillColorSecondaryBrush"),
     };
-    private readonly Button upBtn = new() { Content = new FontIcon { Glyph = "" } };
+    private readonly Button upBtn = new() { Content = Icons.Make(Icons.Up) };
     private readonly ComboBox driveBox = new() { MinWidth = 90, PlaceholderText = L.T("Drive") };
     private readonly Dictionary<string, Row> byPath = new();
     private readonly List<Row> rows = new();
@@ -55,7 +55,7 @@ public sealed class DiskView : UserControl
     private bool mapMode;
     private readonly ComboBox sortBox = new() { MinWidth = 140 };
     private readonly ComboBox topBox = new() { MinWidth = 90 };
-    private readonly ToggleButton mapBtn = new() { Content = new FontIcon { Glyph = "\uE80A" } };
+    private readonly ToggleButton mapBtn = new() { Content = Icons.Make(Icons.Map) };
     private readonly ProgressBar progress = new() { Margin = new Thickness(26, 0, 26, 6), Visibility = Visibility.Collapsed };
     private readonly Canvas mapCanvas = new() { Margin = new Thickness(24, 0, 24, 4) };
     private readonly ScrollViewer scroll = new();
@@ -287,7 +287,7 @@ public sealed class DiskView : UserControl
         ToolTipService.SetToolTip(r.Check, L.T("Select"));
         r.Check.Click += (_, _) => Toggle(fullPath);
         icon.Children.Add(r.Check);
-        icon.Children.Add(new FontIcon { Glyph = dir ? "" : "", FontSize = 16 });
+        icon.Children.Add(Icons.Make(dir ? Icons.Folder : Icons.File, 16));
 
         FrameworkElement label;
         if (dir)
@@ -318,7 +318,7 @@ public sealed class DiskView : UserControl
         };
         var del = new Button
         {
-            Content = new FontIcon { Glyph = "", FontSize = 14 },
+            Content = Icons.Make(Icons.Delete, 14),
             Padding = new Thickness(8, 4, 8, 4),
         };
         ToolTipService.SetToolTip(del, L.T("Delete"));

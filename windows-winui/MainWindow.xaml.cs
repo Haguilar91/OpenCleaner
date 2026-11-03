@@ -50,10 +50,10 @@ public sealed partial class MainWindow : Window
             OpenPaneLength = 190,
             Content = host,
         };
-        var cleanItem = new NavigationViewItem { Content = L.T("Clean"), Icon = new SymbolIcon(Symbol.Delete), Tag = "clean" };
-        var diskItem = new NavigationViewItem { Content = L.T("Disk usage"), Icon = new FontIcon { Glyph = "" }, Tag = "disk" };
+        var cleanItem = new NavigationViewItem { Content = L.T("Clean"), Icon = Icons.Make(Icons.Clean), Tag = "clean" };
+        var diskItem = new NavigationViewItem { Content = L.T("Disk usage"), Icon = Icons.Make(Icons.Storage), Tag = "disk" };
         nav.MenuItems.Add(cleanItem);
-        var appsItem = new NavigationViewItem { Content = L.T("Apps"), Icon = new FontIcon { Glyph = "\uE71D" }, Tag = "apps" };
+        var appsItem = new NavigationViewItem { Content = L.T("Apps"), Icon = Icons.Make(Icons.Apps), Tag = "apps" };
         nav.MenuItems.Add(diskItem);
         nav.MenuItems.Add(appsItem);
         nav.SelectionChanged += (s, e) =>

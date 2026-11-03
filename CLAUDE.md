@@ -112,9 +112,11 @@ improvements" doc (https://claude.ai/artifact/E43iabXhcpxcnvteqh9kqw).
   `windows-winui` folders to `~/Winshared/shots`, then `powershell -ExecutionPolicy Bypass -File Z:\shots\take_screenshots.ps1`).
   It builds both apps, makes a sample folder and uses the `--tab clean|disk|apps`, `--root`, `--map` launch options.
   `utmctl exec` runs as SYSTEM with no desktop, so Claude cannot take them itself.
-- **Linux icons are bundled** in `linux-cachyos/icons/` (see its README): UI icons are copies from Adwaita
-  named `opencleaner-*-symbolic`, so no icon theme can replace or lack them; the app icon is
-  `icons/hicolor/scalable/apps/local.opencleaner.OpenCleaner.svg` (written by `build_icons.py`).
+- **One UI icon set (Lucide) in every app**, generated from `docs/brand/ui-icons/` by
+  `docs/brand/build_ui_icons.py` (see `docs/brand/README.md`); never hand-edit the outputs or use SF Symbols,
+  Segoe glyphs or theme icons. GTK, SwiftUI and WinUI fill icons, so those get filled outlines of the strokes
+  (a plain stroke SVG renders as a blob in GTK). Linux names stay `opencleaner-*-symbolic` (bundled, so no
+  icon theme can replace them); the app icon is `icons/hicolor/scalable/apps/local.opencleaner.OpenCleaner.svg`.
   `opencleaner.py --install` (script or binary) writes the .desktop file and icon to `~/.local/share`;
   GNOME on Wayland takes the dock icon only from there.
 - **Linux toasts go through `Window.notify()`**: each tab has its own `Adw.ToastOverlay` and notify picks

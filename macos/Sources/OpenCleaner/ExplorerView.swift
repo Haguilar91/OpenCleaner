@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct Entry: Identifiable {
@@ -147,7 +148,7 @@ struct ExplorerView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Button { model.up() } label: { Image(systemName: "chevron.up") }
+                Button { model.up() } label: { LucideIcon(.up) }
                     .disabled(!model.canGoUp)
                 Button(tr("Home")) { model.setRoot(URL(fileURLWithPath: home)) }.fixedSize()
                 Button(tr("System (/)")) { model.setRoot(URL(fileURLWithPath: "/")) }.fixedSize()
@@ -164,8 +165,8 @@ struct ExplorerView: View {
                 }
                 .pickerStyle(.menu).labelsHidden().frame(width: 120).help(tr("Show only the first items of the sort"))
                 Picker("", selection: $model.mapMode) {
-                    Image(systemName: "list.bullet").tag(false)
-                    Image(systemName: "square.grid.2x2").tag(true)
+                    Image(nsImage: LucideIcon.image(.list)).tag(false)
+                    Image(nsImage: LucideIcon.image(.map)).tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 80)
                 .help(tr("List or map"))
@@ -252,7 +253,7 @@ struct ExplorerView: View {
                 .toggleStyle(.checkbox).labelsHidden()
             Button { if e.isDir { model.go(e.id) } else { model.preview = e.id } } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: e.isDir ? "folder.fill" : "doc")
+                    LucideIcon(e.isDir ? .folder : .file)
                         .foregroundStyle(e.isDir ? Color.accentColor : Color.secondary)
                         .frame(width: 20)
                     Text(e.name).lineLimit(1)
@@ -266,7 +267,7 @@ struct ExplorerView: View {
             Text(e.size.map { fmt($0) } ?? "…")
                 .monospacedDigit().foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .trailing)
-            Button { model.pendingDelete = [e.id] } label: { Image(systemName: "trash") }
+            Button { model.pendingDelete = [e.id] } label: { LucideIcon(.delete) }
                 .buttonStyle(.borderless).help(model.deleteMode.label)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)

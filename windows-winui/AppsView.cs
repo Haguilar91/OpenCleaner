@@ -184,7 +184,7 @@ public sealed class AppsView : UserControl
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
         };
-        var del = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Padding = new Thickness(8, 4, 8, 4) };
+        var del = new Button { Content = Icons.Make(Icons.Delete, 14), Padding = new Thickness(8, 4, 8, 4) };
         ToolTipService.SetToolTip(del, L.T("Uninstall..."));
         del.Click += async (_, _) => await UninstallAsync(a);
 

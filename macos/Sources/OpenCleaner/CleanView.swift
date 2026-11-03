@@ -85,7 +85,7 @@ struct CleanView: View {
     @ViewBuilder private func row(_ item: CleanItem) -> some View {
         HStack(spacing: 12) {
             if item.empty {
-                Image(systemName: item.failed ? "xmark.circle.fill" : "checkmark.circle.fill")
+                LucideIcon(item.failed ? .x : .check)
                     .foregroundStyle(item.failed ? Color.red : Color.green)
                     .frame(width: 20)
             } else {
@@ -112,7 +112,7 @@ struct CleanView: View {
             } else {
                 Text(fmt(item.size)).foregroundStyle(.secondary).monospacedDigit()
                 if !item.paths.isEmpty {
-                    Button { store.reviewing = item } label: { Image(systemName: "eye") }
+                    Button { store.reviewing = item } label: { LucideIcon(.review) }
                         .buttonStyle(.borderless).help(tr("Review files"))
                 }
             }

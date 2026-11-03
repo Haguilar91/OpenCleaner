@@ -153,7 +153,7 @@ struct MapView: View {
                     RoundedRectangle(cornerRadius: 3).strokeBorder(Color.white, lineWidth: 3)
                     RoundedRectangle(cornerRadius: 3).strokeBorder(Color.black.opacity(0.6), lineWidth: 1)
                     if w > 24 && h > 24 {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.white)
+                        LucideIcon(.check, size: 14).foregroundStyle(.white)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(4)
                     }
                 }

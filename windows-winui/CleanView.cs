@@ -134,13 +134,10 @@ public sealed class CleanView : UserControl
         UIElement lead;
         if (it.Empty)
         {
-            lead = new FontIcon
-            {
-                Glyph = it.Failed ? "" : "",
-                FontSize = 16,
-                Margin = new Thickness(8, 0, 8, 0),
-                Foreground = it.Failed ? Ui.Red : Ui.Green,
-            };
+            var mark = Icons.Make(it.Failed ? Icons.X : Icons.Check, 16);
+            mark.Margin = new Thickness(8, 0, 8, 0);
+            mark.Foreground = it.Failed ? Ui.Red : Ui.Green;
+            lead = mark;
         }
         else
         {
@@ -175,7 +172,7 @@ public sealed class CleanView : UserControl
         {
             var review = new Button
             {
-                Content = new FontIcon { Glyph = "\uE7B3", FontSize = 14 },
+                Content = Icons.Make(Icons.Review, 14),
                 Padding = new Thickness(8, 4, 8, 4),
             };
             ToolTipService.SetToolTip(review, L.T("Review files"));

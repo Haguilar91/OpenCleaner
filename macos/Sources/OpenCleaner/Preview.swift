@@ -166,7 +166,7 @@ struct ReviewSheet: View {
                         let isDir = FS.isRealDir(u)
                         Button { if !isDir { model.preview = u } } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: isDir ? "folder.fill" : "doc").frame(width: 18)
+                                LucideIcon(isDir ? .folder : .file).frame(width: 18)
                                 Text(u.lastPathComponent).lineLimit(1)
                                 Spacer()
                                 Text(isDir ? tr("folder") : fmt(Int64((try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)))

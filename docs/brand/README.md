@@ -37,6 +37,21 @@ pip install playwright pillow && python -m playwright install chromium
 python3 docs/brand/build_icons.py
 ```
 
+## UI icons (all apps)
+
+Every app uses the same [Lucide](https://lucide.dev) icons (ISC license). The masters are the 24 px stroke SVGs
+in `ui-icons/`; `build_ui_icons.py` (needs only `fonttools`) writes each app's copy:
+
+| App | Generated | Used as |
+|---|---|---|
+| Android | `res/drawable/ic_<name>.xml` (stroke vectors, only icons the app ships) | `R.drawable.ic_<name>` |
+| Linux | `linux-cachyos/icons/hicolor/scalable/actions/opencleaner-*-symbolic.svg` (filled outlines) | `icon_name=` |
+| macOS | `macos/Sources/OpenCleaner/Icons.swift` (filled outlines) | `LucideIcon(.folder)`, `LucideIcon.image(.map)` |
+| Windows WinUI | `windows-winui/Icons.cs` (filled outlines) | `Icons.Make(Icons.Folder, 16)` |
+
+WinForms uses text buttons and has no icons. To add an icon: put the Lucide SVG in `ui-icons/` (keep the
+`<!-- Lucide icon "..." -->` line), add it to `LINUX` in the script if Linux needs it, rerun the script, then use it.
+
 ## Name, type and color
 
 - Name: always one word, **OpenCleaner**. Never "Open Cleaner" or "OPENCLEANER".

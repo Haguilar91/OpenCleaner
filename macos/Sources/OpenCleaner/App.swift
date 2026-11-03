@@ -43,7 +43,7 @@ struct RootView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Text("OpenCleaner").font(.system(size: 15, weight: .bold))
-            Button { refresh() } label: { Image(systemName: "arrow.clockwise") }
+            Button { refresh() } label: { LucideIcon(.refresh) }
                 .buttonStyle(.borderless)
                 .help(tr("Rescan"))
                 .disabled(store.busy)
@@ -62,7 +62,7 @@ struct RootView: View {
                     .buttonStyle(.borderedProminent).controlSize(.small).disabled(store.updating)
             } else {
                 Button { Task { await store.checkForUpdates(manual: true) } } label: {
-                    Image(systemName: "arrow.down.circle")
+                    LucideIcon(.update)
                 }
                 .buttonStyle(.borderless).help(tr("Check for updates (OpenCleaner {0})", Updater.currentVersion))
             }

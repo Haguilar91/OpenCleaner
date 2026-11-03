@@ -283,7 +283,7 @@ struct AppsView: View {
             Text(a.size.map { fmt($0) } ?? "\u{2026}")
                 .monospacedDigit().foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .trailing)
-            Button { model.startUninstall(a) } label: { Image(systemName: "trash") }
+            Button { model.startUninstall(a) } label: { LucideIcon(.delete) }
                 .buttonStyle(.borderless).help(tr("Uninstall…"))
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
