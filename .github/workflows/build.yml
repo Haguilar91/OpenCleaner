@@ -38,7 +38,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       label: ${{ steps.v.outputs.label }}     # used in file names: 1.5, or 1.5-dev.42 on the dev branch
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         name: Check that every app has the same version (and the tag's, on a release)
         run: |
@@ -59,10 +59,10 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: arm64, name: arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Single-file build (Debian 12 container)
         run: ARCHS=${{ matrix.arch }} sh linux-cachyos/build_release_docker.sh "${{ needs.version.outputs.label }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.name }}
           path: dist/release-${{ needs.version.outputs.label }}/opencleaner-*-linux-${{ matrix.name }}
@@ -77,7 +77,7 @@ jobs:
           - { runner: ubuntu-24.04-arm, distros: "arch", gui: "" }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Distro logic (apt, dnf, pacman in containers)
         run: sh linux-cachyos/tests/run_docker_tests.sh ${{ matrix.distros }}
       - name: Real window under Xvfb (oldest GTK the app supports)
@@ -85,7 +85,7 @@ jobs:
         run: sh linux-cachyos/tests/run_docker_gui.sh ${{ matrix.gui }}
       - name: Logs and screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-tests-${{ matrix.runner }}
           path: linux-cachyos/tests/out/
@@ -95,14 +95,14 @@ jobs:
     needs: version
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build OpenCleaner.app
         run: cd macos && ./build_app.sh
       - name: Zip
         run: |
           mkdir -p out
           (cd macos/build && ditto -c -k --keepParent OpenCleaner.app "../../out/OpenCleaner-${{ needs.version.outputs.label }}-macOS.zip")
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: out/
@@ -117,8 +117,8 @@ jobs:
     env:
       V: ${{ needs.version.outputs.label }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 8.0.x
       - name: Inno Setup
@@ -138,7 +138,7 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item "dist\OpenCleaner-Setup-${{ matrix.arch }}.exe" "out\OpenCleaner-$env:V-Setup-${{ matrix.arch }}.exe"
           if ("${{ matrix.arch }}" -eq "x64") { Copy-Item "windows\OpenCleaner.exe" "out\OpenCleaner-$env:V-Windows-portable.exe" }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}
           path: out/
@@ -151,12 +151,12 @@ jobs:
       V: ${{ needs.version.outputs.label }}
       KEYSTORE: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.7"
       - name: Signing key
@@ -187,7 +187,7 @@ jobs:
               echo "::error::$apk is not signed with the release key"; exit 1
             fi
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android
           path: out/
@@ -203,8 +203,8 @@ jobs:
       V: ${{ needs.version.outputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Checksums
@@ -241,8 +241,8 @@ jobs:
       LABEL: ${{ needs.version.outputs.label }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Checksums
