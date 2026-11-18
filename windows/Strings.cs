@@ -64,6 +64,8 @@ namespace OpenCleaner
             { "Restart as administrator", "Reiniciar como administrador" },
             { "Review files", "Revisar archivos" },
             { "Review files...", "Revisar archivos..." },
+            { "Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab.",
+                "Se conserva, no se elimina: lo ocultaste en Archivos grandes, o es una carpeta con un archivo que ocultaste. Para eliminarlo, vuelve a mostrarlo desde Archivos ocultos en la pestaña Limpiar." },
             { "Large files", "Archivos grandes" },
             { "Files over 100 MB", "Archivos de más de 100 MB" },
             { "Hidden files", "Archivos ocultos" },

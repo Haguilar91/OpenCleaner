@@ -476,10 +476,18 @@ public sealed class DiskView : UserControl
     private async Task DeleteAsync(List<string> paths)
     {
         if (paths.Count == 0) return;
+        paths = new List<string>(paths);
+        string kept = HiddenFiles.TakeKept(paths);
+        if (paths.Count == 0)
+        {
+            await Ui.Message(XamlRoot, L.T("Hidden files"), kept);
+            return;
+        }
         bool permanent = Permanent;
         string what = paths.Count == 1 ? $"\"{Path.GetFileName(paths[0])}\"" : L.T("{0} items", paths.Count);
         string body = (permanent ? L.T("This cannot be undone: nothing goes to the Recycle Bin.") : L.T("You can restore them from the Recycle Bin."))
-                      + "\n\n" + string.Join("\n", paths.Take(12)) + (paths.Count > 12 ? "\n" + L.T("...and {0} more", paths.Count - 12) : "");
+                      + "\n\n" + string.Join("\n", paths.Take(12)) + (paths.Count > 12 ? "\n" + L.T("...and {0} more", paths.Count - 12) : "")
+                      + (kept != null ? "\n\n" + kept : "");
         if (!await Ui.Confirm(XamlRoot, permanent ? L.T("Delete {0} permanently?", what) : L.T("Move {0} to the Recycle Bin?", what),
                               body, L.T(DeleteModes[permanent ? 1 : 0]))) return;
         var failed = new List<string>();

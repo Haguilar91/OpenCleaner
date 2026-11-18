@@ -28,8 +28,8 @@ Naming is always **OpenCleaner** (no "Mac Cleaner" / "Win Cleaner" / "CachyOS Cl
 | Android | Two flavors: `phone` (minSdk 30, `com.opencleaner.android`) and `tv` (minSdk 28, `com.opencleaner.tv`, leanback launcher + banner, `IS_TV` BuildConfig). 1.3 phone APK: preview, player and map tried on a Pixel. TV APK driven with D-pad on the Google TV emulator (API 31): rail, focus ring, list/map/Apps, OK-menu on map blocks; Android 9 storage path untested (needs a real Fire OS 7 device) |
 | Linux binary | `build_release_docker.sh`: x86_64 + arm64 single files (~28 MB, Debian 12 base). Open the window on systems without GTK/Python (need the host's Wayland/X11/GL libs). Media playback inside the binary untested |
 
-Highest-value next steps: build and run the 1.5 changes on macOS, Windows and Android (written on
-Linux, only WinForms compiled); exercise the real cleaning flows on Windows (WinForms and WinUI) and
+Every app compiles on GitHub Actions (dev build 1.4-dev.6 green on all platforms, Large files included), but
+compiling is not running. Highest-value next steps: run the 1.5 changes on macOS, Windows and Android; exercise the real cleaning flows on Windows (WinForms and WinUI) and
 macOS with actual junk. Plan and findings: `docs/releases/1.5.md` and the "OpenCleaner 1.5:
 improvements" doc (https://claude.ai/artifact/E43iabXhcpxcnvteqh9kqw).
 
@@ -39,7 +39,7 @@ improvements" doc (https://claude.ai/artifact/E43iabXhcpxcnvteqh9kqw).
   file, size/date/location, Open, Delete/Trash); in Clean, each item with files has a Review list
   whose files open the same preview. Android: `PreviewDialog`/`ReviewDialog` in `Screens.kt`;
   macOS: `Preview.swift`; Linux: `show_preview`/`show_review`; WinForms: `PreviewForm`/`ReviewForm`;
-  WinUI: `Preview.cs`. macOS preview also plays mp4/mp3/flac (AppKit AVPlayerView; SwiftUI VideoPlayer crashes on macOS 27). Disk map (treemap), sort + Top 5/10/50/100 and measuring-progress % exist in Android, macOS, Linux, WinForms and WinUI (WinForms has no media player). Apps page (installed apps, size, last used, sort + Top N, uninstall with leftover review): Android (system uninstall prompt only), macOS (`AppsView.swift`), Linux (`AppsPage`, pacman + Flatpak), Windows (`Apps` class registry-based; the same code lives in `windows/Program.cs` and `windows-winui/AppsCore.cs`, keep in sync). Uninstall deletes PERMANENTLY (no Trash/Recycle Bin, by the user's choice) after a review dialog with a clear warning, and only inside the allowed folders (macOS: /Applications, ~/Applications, ~/Library; Linux: home; Windows: AppData, ProgramData, the install folder). The Linux app detects the distro (`detect_distro`, `build_scanners`): Arch/CachyOS/Omarchy = pacman, Debian/Ubuntu/Mint/Raspbian = apt (+ Snap), Fedora/Rocky = dnf, Bazzite = image-based (no system package ops, Flatpak only); detection logic is unit-checked, the per-distro scanners are not yet run on those distros. Not yet compiled/run: Linux, WinForms, WinUI (all of the above was written blind).
+  WinUI: `Preview.cs`. macOS preview also plays mp4/mp3/flac (AppKit AVPlayerView; SwiftUI VideoPlayer crashes on macOS 27). Disk map (treemap), sort + Top 5/10/50/100 and measuring-progress % exist in Android, macOS, Linux, WinForms and WinUI (WinForms has no media player). Apps page (installed apps, size, last used, sort + Top N, uninstall with leftover review): Android (system uninstall prompt only), macOS (`AppsView.swift`), Linux (`AppsPage`, pacman + Flatpak), Windows (`Apps` class registry-based; the same code lives in `windows/Program.cs` and `windows-winui/AppsCore.cs`, keep in sync). Uninstall deletes PERMANENTLY (no Trash/Recycle Bin, by the user's choice) after a review dialog with a clear warning, and only inside the allowed folders (macOS: /Applications, ~/Applications, ~/Library; Linux: home; Windows: AppData, ProgramData, the install folder). The Linux app detects the distro (`detect_distro`, `build_scanners`): Arch/CachyOS/Omarchy = pacman, Debian/Ubuntu/Mint/Raspbian = apt (+ Snap), Fedora/Rocky = dnf, Bazzite = image-based (no system package ops, Flatpak only); detection logic is unit-checked, the per-distro scanners are not yet run on those distros. All of this compiles in CI; much of it has not been run on real Windows.
 
 - **Large files** (Clean tab, every app): the 15 biggest files over 100 MB in the user's own folders (dot
   folders, ~/Library, AppData, packages and OneDrive online-only files skipped), unticked. Each row has the eye
@@ -47,7 +47,8 @@ improvements" doc (https://claude.ai/artifact/E43iabXhcpxcnvteqh9kqw).
   hide button (Lucide eye-off, `hide`). Hidden paths are remembered (Linux settings.json `hidden_large_files`,
   macOS UserDefaults `hiddenLargeFiles`, WinForms `HKCU\Software\OpenCleaner\HiddenLargeFiles`, WinUI
   settings.txt `HiddenLargeFiles`, Android prefs `hidden_large_files`); a "Hidden files (N)" row at the end of
-  the group opens a list to show them again. WinForms has no row buttons: its Review button turns into
+  the group opens a list to show them again. Disk usage refuses to delete a hidden file or a folder holding one
+  (left out of the delete with a note; `kept_paths` / `HiddenFiles.keeps` / `HiddenFiles.TakeKept`). WinForms has no row buttons: its Review button turns into
   "Preview..." for a single file, plus a "Hide this file" button and a right-click menu.
 - **Nothing is deleted until the user ticks items and confirms** in a dialog listing them.
 - **Every category always shows a row**: "Clean" (green) when nothing to remove, "Scan failed"

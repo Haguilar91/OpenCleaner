@@ -23,6 +23,12 @@ enum HiddenFiles {
     static func add(_ path: String) { save(Set(all).union([path])) }
     static func remove(_ paths: Set<String>) { save(Set(all).subtracting(paths)) }
     private static func save(_ s: Set<String>) { UserDefaults.standard.set(s.sorted(), forKey: key) }
+
+    /// True for a hidden file, or a folder holding one: Disk usage must not delete these.
+    static func keeps(_ url: URL) -> Bool {
+        let p = url.standardizedFileURL.path
+        return all.contains { $0 == p || $0.hasPrefix(p + "/") }
+    }
 }
 
 /// A scan that could not read what it needs. Shown as a red "Scan failed" row, never as "Clean".
@@ -109,18 +115,17 @@ enum Scanners {
         let homeURL = URL(fileURLWithPath: home)
         var found: [(URL, Int64)] = []
         for top in FS.children(homeURL) where !top.lastPathComponent.hasPrefix(".") && top.lastPathComponent != "Library" {
-            var walk: [URL] = [top]
-            if FS.isRealDir(top) {
-                let e = FileManager.default.enumerator(at: top, includingPropertiesForKeys: Array(keys),
-                                                       options: [.skipsHiddenFiles, .skipsPackageDescendants],
-                                                       errorHandler: { _, _ in true })
-                walk = (e?.allObjects as? [URL]) ?? []
-            }
-            for f in walk {
-                guard let v = try? f.resourceValues(forKeys: keys), v.isRegularFile == true else { continue }
+            func check(_ f: URL) {
+                guard let v = try? f.resourceValues(forKeys: keys), v.isRegularFile == true else { return }
                 let size = Int64(v.totalFileAllocatedSize ?? v.fileAllocatedSize ?? 0)
                 if size >= largeMin && !hidden.contains(f.path) { found.append((f, size)) }
             }
+            guard FS.isRealDir(top) else { check(top); continue }
+            // one file at a time: a home folder can hold millions of files
+            let e = FileManager.default.enumerator(at: top, includingPropertiesForKeys: Array(keys),
+                                                   options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                                                   errorHandler: { _, _ in true })
+            while let f = e?.nextObject() as? URL { check(f) }
         }
         found.sort { $0.1 > $1.1 }
         return found.prefix(15).map { f, size in

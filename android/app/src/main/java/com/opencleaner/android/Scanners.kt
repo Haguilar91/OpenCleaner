@@ -32,6 +32,12 @@ object HiddenFiles {
     fun add(path: String) = save(all().toSet() + path)
     fun remove(path: String) = save(all().toSet() - path)
     private fun save(set: Set<String>) { prefs?.edit()?.putStringSet(KEY, set)?.apply() }
+
+    /** True for a hidden file, or a folder holding one: Storage must not delete these. */
+    fun keeps(f: File): Boolean {
+        val p = f.absolutePath.trimEnd('/')
+        return all().any { it == p || it.startsWith("$p/") }
+    }
 }
 
 data class CleanResult(val title: String, val skipped: Int, val error: String?)

@@ -31,7 +31,18 @@ final class ExplorerModel: ObservableObject {
     @Published var measured = 0
     @Published var itemCount = 0
     @Published var error: String?
-    @Published var pendingDelete: [URL] = []      // waiting for confirmation
+    @Published var pendingDelete: [URL] = [] {    // waiting for confirmation
+        didSet {
+            // hidden large files (and folders holding one) are kept: left out, with a note why
+            let kept = pendingDelete.filter { HiddenFiles.keeps($0) }
+            keptNote = kept.isEmpty ? nil
+                : tr("Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab.") + "\n" + kept.prefix(12).map(\.lastPathComponent).joined(separator: "\n")
+            if kept.isEmpty { return }
+            pendingDelete = pendingDelete.filter { !HiddenFiles.keeps($0) }   // does not run didSet again
+            if pendingDelete.isEmpty { error = keptNote?.replacingOccurrences(of: "\n", with: " ") }
+        }
+    }
+    @Published var keptNote: String?
     @Published var selected: Set<URL> = []        // ticked in the list or right-clicked in the map
     @Published var deleteMode = DeleteMode(rawValue: UserDefaults.standard.string(forKey: "deleteMode") ?? "")
         ?? .trash {
@@ -244,7 +255,8 @@ struct ExplorerView: View {
         let note = model.deleteMode == .trash
             ? tr("You can put them back from the Trash.")
             : tr("This cannot be undone: nothing goes to the Trash.")
-        return note + "\n\n" + names + more
+        let kept = model.keptNote.map { "\n\n" + $0 } ?? ""
+        return note + "\n\n" + names + more + kept
     }
 
     @ViewBuilder private func row(_ e: Entry) -> some View {

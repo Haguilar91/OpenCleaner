@@ -99,5 +99,23 @@ elif pm == "dnf":
     r = sh("dnf", "clean", "all")
     check("dnf clean all runs", r.returncode == 0, r.stderr[-120:])
 
+# Large files: user folders only (no dot folders, no ~/snap), biggest first, hidden files left out
+import tempfile  # noqa: E402
+big = tempfile.mkdtemp()
+for rel, mb in [("Videos/movie.mkv", 300), ("Videos/sub/clip.mp4", 150), ("Downloads/small.zip", 50),
+                (".local/share/Steam/game.pak", 500), ("Downloads/.hidden.iso", 200), ("snap/app/cache.bin", 200)]:
+    os.makedirs(os.path.dirname(os.path.join(big, rel)), exist_ok=True)
+    with open(os.path.join(big, rel), "wb") as f:
+        f.truncate(mb * 1024 * 1024)   # sparse: no real disk space used
+names = [i.title for i in oc.scan_large_files(big)]
+check("large files: user folders only, biggest first", names == ["movie.mkv", "clip.mp4"], str(names))
+saved = oc.load_settings().get("hidden_large_files")
+oc.set_hidden_large_files([os.path.join(big, "Videos/movie.mkv")])
+names = [i.title for i in oc.scan_large_files(big)]
+check("large files: a hidden file stays out", names == ["clip.mp4"], str(names))
+check("large files: Hidden files row", oc.hidden_files_item() is not None and oc.hidden_files_item().kind == "hidden")
+oc.save_settings(hidden_large_files=saved or [])
+shutil.rmtree(big, ignore_errors=True)
+
 print("RESULT:", "ALL PASSED" if not failures else f"{len(failures)} FAILED: {failures}")
 sys.exit(1 if failures else 0)

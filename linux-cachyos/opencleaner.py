@@ -155,6 +155,8 @@ ES = {
     "Scan failed: {0}": "Falló el análisis: {0}",
     "Scan failed": "Falló el análisis",
     "Review files": "Revisar archivos",
+    "Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab.":
+        "Se conserva, no se elimina: lo ocultaste en Archivos grandes, o es una carpeta con un archivo que ocultaste. Para eliminarlo, vuelve a mostrarlo desde Archivos ocultos en la pestaña Limpiar.",
     "Large files": "Archivos grandes",
     "Files over 100 MB": "Archivos de más de 100 MB",
     "Preview": "Vista previa",
@@ -314,7 +316,7 @@ ES = {
     "Added OpenCleaner to the app menu: {0}": "OpenCleaner se añadió al menú de aplicaciones: {0}",
 }
 
-VERSION = "1.4"
+VERSION = "1.5"
 APP_ID = "local.opencleaner.OpenCleaner"
 ICON_DIR = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "icons")
 HOME = os.path.expanduser("~")
@@ -771,6 +773,16 @@ def set_hidden_large_files(paths):
     save_settings(hidden_large_files=sorted(set(paths)))
 
 
+def kept_paths(paths):
+    """The paths Disk usage must not delete: a file hidden in Large files, or a folder holding one."""
+    hidden = [os.path.abspath(h) for h in hidden_large_files()]
+
+    def holds(p):
+        p = os.path.abspath(p)
+        return any(h == p or h.startswith(p.rstrip(os.sep) + os.sep) for h in hidden)
+    return [p for p in paths if holds(p)]
+
+
 def large_file_item(size, path):
     where = os.path.dirname(path)
     if (where + os.sep).startswith(HOME + os.sep) or where == HOME:
@@ -780,12 +792,26 @@ def large_file_item(size, path):
 
 def scan_large_files(root=None):
     """The biggest files (over 100 MB) in the user's own folders, unticked. Hidden (dot) files and folders
-    are skipped: they hold app data (Steam games, Flatpak, caches) that other categories handle."""
+    and ~/snap are skipped: they hold app data (Steam games, Flatpak, Snap, caches) that other categories
+    handle. Drives mounted inside the home folder (network shares, USB disks) are not entered."""
     root = root or HOME
     hidden = set(hidden_large_files())
     found = []
+    try:
+        home_dev = os.lstat(root).st_dev
+    except OSError:
+        return []
+
+    def keep(dirpath, d):
+        if d.startswith(".") or (dirpath == root and d == "snap"):
+            return False
+        try:
+            return os.lstat(os.path.join(dirpath, d)).st_dev == home_dev
+        except OSError:
+            return False
+
     for dirpath, dirs, files in os.walk(root, onerror=lambda e: None):
-        dirs[:] = [d for d in dirs if not d.startswith(".")]   # os.walk does not follow folder links
+        dirs[:] = [d for d in dirs if keep(dirpath, d)]   # os.walk does not follow folder links
         for name in files:
             if name.startswith("."):
                 continue
@@ -1557,13 +1583,23 @@ class Explorer(Gtk.Box):
         """Ask first. Move to Trash or delete permanently, as the Delete setting says."""
         if not paths:
             return
+        kept = kept_paths(paths)
+        kept_note = ""
+        if kept:
+            paths = [p for p in paths if p not in kept]
+            kept_note = tr("Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab.") + "\n" + "\n".join(os.path.basename(p) for p in kept[:12])
+            if not paths:
+                info = AlertDialog(heading=tr("Hidden files"), body=kept_note)
+                info.add_response("ok", tr("OK"))
+                info.present(self.win)
+                return
         permanent = self.delete_dd.get_selected() == 1
         what = f'"{os.path.basename(paths[0])}"' if len(paths) == 1 else tr("{0} items", len(paths))
         names = "\n".join(paths[:12]) + ("\n" + tr("…and {0} more", len(paths) - 12) if len(paths) > 12 else "")
         note = (tr("This cannot be undone: nothing goes to the Trash.") if permanent
                 else tr("You can restore them from the Trash."))
         dlg = AlertDialog(heading=(tr("Delete {0} permanently?", what) if permanent else tr("Move {0} to the Trash?", what)),
-                          body=note + "\n\n" + names)
+                          body=note + "\n\n" + names + ("\n\n" + kept_note if kept_note else ""))
         dlg.add_response("cancel", tr("Cancel"))
         dlg.add_response("delete", tr(DELETE_MODES[1 if permanent else 0]))
         dlg.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)

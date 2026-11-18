@@ -266,6 +266,26 @@ namespace OpenCleaner
             Save(list);
         }
 
+        // True for a hidden file, or a folder holding one: Disk usage must not delete these.
+        public static bool Keeps(string path)
+        {
+            string p;
+            try { p = Path.GetFullPath(path).TrimEnd('\\'); } catch (Exception) { return false; }
+            foreach (string h in All())
+                if (h.Equals(p, StringComparison.OrdinalIgnoreCase) || h.StartsWith(p + "\\", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
+        }
+
+        // Takes the kept paths out of a Disk usage delete; returns the note for the user, or null.
+        public static string TakeKept(List<string> paths)
+        {
+            List<string> kept = paths.Where(Keeps).ToList();
+            if (kept.Count == 0) return null;
+            paths.RemoveAll(p => kept.Contains(p));
+            return L.T("Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab.") + "\n" + string.Join("\n", kept.Take(12).Select(p => Path.GetFileName(p)).ToArray());
+        }
+
         public static void Remove(ICollection<string> paths)
         {
             HashSet<string> drop = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);

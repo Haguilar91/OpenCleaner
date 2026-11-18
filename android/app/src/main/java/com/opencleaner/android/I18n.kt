@@ -72,6 +72,8 @@ private val ES = mapOf(
     "Large files" to "Archivos grandes",
     "Files over 100 MB" to "Archivos de más de 100 MB",
     "Hidden files" to "Archivos ocultos",
+    "Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab." to
+        "Se conserva, no se elimina: lo ocultaste en Archivos grandes, o es una carpeta con un archivo que ocultaste. Para eliminarlo, vuelve a mostrarlo desde Archivos ocultos en la pestaña Limpiar.",
     "Hidden files ({0})" to "Archivos ocultos ({0})",
     "Kept out of this list so they are not deleted by mistake." to
         "Se dejan fuera de esta lista para que no se eliminen por error.",

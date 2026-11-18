@@ -483,15 +483,27 @@ fun StorageScreen(onChanged: () -> Unit) {
     preview?.let { f ->
         PreviewDialog(f, { preview = null }, onDelete = { preview = null; toDelete = listOf(f) })
     }
-    if (toDelete.isNotEmpty()) {
-        val files = toDelete
+    // hidden large files (and folders holding one) are kept: left out of the delete, with a note why
+    val keptFiles = toDelete.filter { HiddenFiles.keeps(it) }
+    val keptNote = if (keptFiles.isEmpty()) "" else tr("Kept, not deleted: you hid it in Large files, or it is a folder holding a file you hid. To delete it, show it again from Hidden files in the Clean tab.") + "\n" +
+        keptFiles.take(10).joinToString("\n") { "• " + it.name }
+    if (toDelete.isNotEmpty() && keptFiles.size == toDelete.size) {
+        AlertDialog(
+            onDismissRequest = { toDelete = emptyList() },
+            title = { Text(tr("Hidden files")) },
+            text = { Text(keptNote) },
+            confirmButton = { TextButton(onClick = { toDelete = emptyList() }) { Text(tr("OK")) } },
+        )
+    } else if (toDelete.isNotEmpty()) {
+        val files = toDelete - keptFiles.toSet()
         AlertDialog(
             onDismissRequest = { toDelete = emptyList() },
             title = { Text(if (files.size == 1) tr("Delete \"{0}\" permanently?", files[0].name) else tr("Delete {0} items permanently?", files.size)) },
             text = {
                 Text(tr("Android has no trash for files, so this cannot be undone.") + "\n\n" +
                     files.take(10).joinToString("\n") { "• " + it.name } +
-                    if (files.size > 10) "\n" + tr("…and {0} more", files.size - 10) else "")
+                    (if (files.size > 10) "\n" + tr("…and {0} more", files.size - 10) else "") +
+                    (if (keptNote.isEmpty()) "" else "\n\n" + keptNote))
             },
             confirmButton = {
                 TextButton(onClick = {

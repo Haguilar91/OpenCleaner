@@ -17,7 +17,7 @@ if /i not "%ARCH%"=="x64" if /i not "%ARCH%"=="arm64" if /i not "%ARCH%"=="x86" 
   exit /b 1
 )
 set VERSION=%~2
-if "%VERSION%"=="" set VERSION=1.4
+if "%VERSION%"=="" set VERSION=1.5
 
 rem ISCC may be set beforehand; otherwise look in the usual places, including a per-user
 rem install under any profile (builds started remotely run as a different account)
