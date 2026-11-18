@@ -19,6 +19,7 @@ namespace OpenCleaner
         public List<string> Roots = new List<string>();   // deletes are refused outside these
         public Action Before, After;
         public Func<string> Action;            // extra step; returns an error message or null
+        public string Kind = "";               // "big" (one large file) or "hidden" (the Hidden files row)
     }
 
     class CleanResult
@@ -56,7 +57,7 @@ namespace OpenCleaner
         // OneDrive "online-only" files (Files On-Demand) and offline files take no space on this disk.
         const int RecallOnDataAccess = 0x400000, Offline = 0x1000;
 
-        static bool CloudOnly(FileAttributes a)
+        public static bool CloudOnly(FileAttributes a)
         {
             return ((int)a & (RecallOnDataAccess | Offline)) != 0;
         }
@@ -241,6 +242,37 @@ namespace OpenCleaner
         public static extern bool SetProcessDPIAware();
     }
 
+    // Large files the user hid: kept out of the Large files list on every scan (settings.txt, "|"-separated).
+    static class HiddenFiles
+    {
+        const string Name = "HiddenLargeFiles";
+
+        public static List<string> All()
+        {
+            List<string> list = Settings.Get(Name, "").Split('|').Where(x => x.Length > 0).ToList();
+            list.Sort(StringComparer.OrdinalIgnoreCase);
+            return list;
+        }
+
+        public static void Save(IEnumerable<string> paths)
+        {
+            Settings.Set(Name, string.Join("|", paths.Distinct(StringComparer.OrdinalIgnoreCase)));
+        }
+
+        public static void Add(string path)
+        {
+            List<string> list = All();
+            list.Add(path);
+            Save(list);
+        }
+
+        public static void Remove(ICollection<string> paths)
+        {
+            HashSet<string> drop = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+            Save(All().Where(x => !drop.Contains(x)));
+        }
+    }
+
     // ------------------------------------------------------------------ scanners
     class ScanDef
     {
@@ -269,6 +301,7 @@ namespace OpenCleaner
             defs.Add(new ScanDef(BrowserCaches, L.T("Browser caches"), L.T("Browser caches")));
             defs.Add(new ScanDef(DevCaches, L.T("Developer caches"), L.T("Package manager caches")));
             defs.Add(new ScanDef(Steam, "Steam", L.T("Steam leftovers")));
+            defs.Add(new ScanDef(LargeFiles, L.T("Large files"), L.T("Files over 100 MB")));
 
             List<Item> all = new List<Item>();
             foreach (ScanDef d in defs)
@@ -293,7 +326,91 @@ namespace OpenCleaner
                     all.Add(e);
                 }
             }
-            return all;
+            return WithHiddenRow(all);
+        }
+
+        // The "Hidden files (N)" row at the end of the Large files group (none when nothing is hidden).
+        public static List<Item> WithHiddenRow(List<Item> items)
+        {
+            List<Item> outList = items.Where(x => x.Kind != "hidden").ToList();
+            int n = HiddenFiles.All().Count;
+            if (n == 0) return outList;
+            Item row = new Item();
+            row.Group = L.T("Large files"); row.Title = L.T("Hidden files ({0})", n);
+            row.Subtitle = L.T("Kept out of this list so they are not deleted by mistake.");
+            row.Empty = true; row.Kind = "hidden";
+            int at = outList.FindLastIndex(x => x.Group == L.T("Large files")) + 1;
+            if (at == 0) outList.Add(row); else outList.Insert(at, row);
+            return outList;
+        }
+
+        // Hides one large file: drops its row (an empty Large files group gets its "Clean" row back).
+        public static List<Item> Hide(List<Item> items, Item it)
+        {
+            if (it.Paths.Count > 0) HiddenFiles.Add(it.Paths[0]);
+            List<Item> outList = new List<Item>(items);
+            int at = outList.IndexOf(it);
+            if (at < 0) return items;
+            outList.RemoveAt(at);
+            if (!outList.Any(x => x.Kind == "big"))
+            {
+                Item e = new Item();
+                e.Group = L.T("Large files"); e.Title = L.T("Files over 100 MB"); e.Subtitle = L.T("Nothing to clean");
+                e.Size = 0; e.Empty = true;
+                outList.Insert(at, e);
+            }
+            return WithHiddenRow(outList);
+        }
+
+        const long LargeMin = 100L * 1024 * 1024;
+
+        // The biggest files (over 100 MB) in the user's own folders, unticked. AppData, hidden and system
+        // folders, dot folders, links and OneDrive online-only files are skipped.
+        static List<Item> LargeFiles()
+        {
+            HashSet<string> hidden = new HashSet<string>(HiddenFiles.All(), StringComparer.OrdinalIgnoreCase);
+            List<KeyValuePair<long, string>> found = new List<KeyValuePair<long, string>>();
+            WalkLarge(Profile, 0, hidden, found);
+            found.Sort((a, b) => b.Key.CompareTo(a.Key));
+            List<Item> list = new List<Item>();
+            foreach (KeyValuePair<long, string> f in found.Take(15))
+            {
+                Item it = new Item();
+                it.Group = L.T("Large files"); it.Title = Path.GetFileName(f.Value);
+                it.Subtitle = Path.GetDirectoryName(f.Value);
+                it.Size = f.Key; it.Kind = "big";
+                it.Paths.Add(f.Value);
+                it.Roots.Add(Profile);
+                list.Add(it);
+            }
+            return list;
+        }
+
+        static void WalkLarge(string dir, int depth, HashSet<string> hidden, List<KeyValuePair<long, string>> found)
+        {
+            if (depth > 12) return;
+            const FileAttributes skip = FileAttributes.ReparsePoint | FileAttributes.Hidden | FileAttributes.System;
+            string[] files, dirs;
+            try { files = Directory.GetFiles(dir); dirs = Directory.GetDirectories(dir); }
+            catch (Exception) { return; }
+            foreach (string f in files)
+            {
+                try
+                {
+                    FileInfo fi = new FileInfo(f);
+                    if (fi.Name.StartsWith(".") || (fi.Attributes & skip) != 0 || Util.CloudOnly(fi.Attributes)) continue;
+                    if (fi.Length >= LargeMin && !hidden.Contains(f)) found.Add(new KeyValuePair<long, string>(fi.Length, f));
+                }
+                catch (Exception) { }
+            }
+            foreach (string d in dirs)
+            {
+                string name = Path.GetFileName(d);
+                if (name.StartsWith(".") || (depth == 0 && name.Equals("AppData", StringComparison.OrdinalIgnoreCase))) continue;
+                try { if ((File.GetAttributes(d) & skip) != 0) continue; }
+                catch (Exception) { continue; }
+                WalkLarge(d, depth + 1, hidden, found);
+            }
         }
 
         public static CleanResult Clean(Item it)

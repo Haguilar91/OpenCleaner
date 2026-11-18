@@ -35,7 +35,7 @@ struct CleanView: View {
             }
             Divider()
             HStack {
-                Text(summary).foregroundStyle(.secondary)
+                Text(store.notice ?? summary).foregroundStyle(.secondary).lineLimit(2)
                 Spacer()
                 Button(tr("Clean selected")) { store.confirming = true }
                     .buttonStyle(.borderedProminent)
@@ -47,6 +47,10 @@ struct CleanView: View {
             .background(.bar)
         }
         .sheet(item: $store.reviewing) { ReviewSheet(item: $0) }
+        .sheet(item: Binding(get: { store.previewing.map(Identified.init) }, set: { store.previewing = $0?.url })) {
+            PreviewSheet(url: $0.url)
+        }
+        .sheet(isPresented: $store.showHidden) { HiddenSheet(store: store) }
         .alert(tr("Delete selected items?"), isPresented: $store.confirming) {
             Button(tr("Clean"), role: .destructive) { Task { await store.cleanSelected() } }
             Button(tr("Cancel"), role: .cancel) {}
@@ -83,6 +87,36 @@ struct CleanView: View {
     }
 
     @ViewBuilder private func row(_ item: CleanItem) -> some View {
+        if item.kind == "hidden" { hiddenRow(item) } else { itemRow(item) }
+    }
+
+    /// "Hidden files (N)": clicking it lists the hidden large files so they can be shown again.
+    private func hiddenRow(_ item: CleanItem) -> some View {
+        Button { store.showHidden = true } label: {
+            HStack(spacing: 12) {
+                LucideIcon(.hide).foregroundStyle(.secondary).frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                    Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer()
+                Text(tr("Show")).foregroundStyle(.secondary)
+                LucideIcon(.chevronRight).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The eye: a single file opens straight in the preview, anything else lists its files.
+    private func openEye(_ item: CleanItem) {
+        if item.paths.count == 1, let f = item.paths.first, !FS.isRealDir(f) { store.previewing = f }
+        else { store.reviewing = item }
+    }
+
+    @ViewBuilder private func itemRow(_ item: CleanItem) -> some View {
         HStack(spacing: 12) {
             if item.empty {
                 LucideIcon(item.failed ? .x : .check)
@@ -112,12 +146,83 @@ struct CleanView: View {
             } else {
                 Text(fmt(item.size)).foregroundStyle(.secondary).monospacedDigit()
                 if !item.paths.isEmpty {
-                    Button { store.reviewing = item } label: { LucideIcon(.review) }
-                        .buttonStyle(.borderless).help(tr("Review files"))
+                    let single = item.paths.count == 1 && !FS.isRealDir(item.paths[0])
+                    Button { openEye(item) } label: { LucideIcon(.review) }
+                        .buttonStyle(.borderless).help(single ? tr("Preview") : tr("Review files"))
+                }
+                if item.kind == "big" {
+                    Button { store.hide(item) } label: { LucideIcon(.hide) }
+                        .buttonStyle(.borderless).help(tr("Hide this file"))
                 }
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+final class HiddenModel: ObservableObject {
+    @Published var back: Set<String> = []     // ticked to show again
+    let paths = HiddenFiles.all
+
+    func toggle(_ p: String) { if back.contains(p) { back.remove(p) } else { back.insert(p) } }
+
+    func detail(_ p: String) -> String {
+        let dir = (p as NSString).deletingLastPathComponent
+        let shown: String = dir.hasPrefix(home) ? "~" + String(dir.dropFirst(home.count)) : dir
+        let attrs = try? FileManager.default.attributesOfItem(atPath: p)
+        let size = (attrs?[.size] as? NSNumber)?.int64Value
+        let what: String = size.map { fmt($0) } ?? tr("no longer exists")
+        return shown + " \u{00B7} " + what
+    }
+}
+
+/// Lists the hidden large files; the ticked ones are shown again after a rescan.
+struct HiddenSheet: View {
+    @ObservedObject var store: CleanerStore
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var model = HiddenModel()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(tr("Hidden files")).font(.headline)
+            Text(tr("These files are left out of Large files. Tick the ones to show again."))
+                .font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.paths, id: \.self) { p in
+                        hiddenLine(p)
+                        Divider()
+                    }
+                }
+            }
+            .frame(height: 260)
+            HStack {
+                Spacer()
+                Button(tr("Close")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(tr("Show again")) {
+                    let back = model.back
+                    dismiss()
+                    Task { await store.unhide(back) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.back.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
+    }
+
+    private func hiddenLine(_ p: String) -> some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: Binding(get: { model.back.contains(p) }, set: { _ in model.toggle(p) }))
+                .toggleStyle(.checkbox).labelsHidden()
+            VStack(alignment: .leading, spacing: 2) {
+                Text((p as NSString).lastPathComponent).lineLimit(1)
+                Text(model.detail(p)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 5)
     }
 }

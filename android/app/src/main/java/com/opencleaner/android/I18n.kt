@@ -71,6 +71,16 @@ private val ES = mapOf(
         "Copias de los archivos que enviaste. Si borraste el original de tu galería, esta puede ser la única copia.",
     "Large files" to "Archivos grandes",
     "Files over 100 MB" to "Archivos de más de 100 MB",
+    "Hidden files" to "Archivos ocultos",
+    "Hidden files ({0})" to "Archivos ocultos ({0})",
+    "Kept out of this list so they are not deleted by mistake." to
+        "Se dejan fuera de esta lista para que no se eliminen por error.",
+    "Hide this file" to "Ocultar este archivo",
+    "Show" to "Mostrar",
+    "Show again" to "Volver a mostrar",
+    "no longer exists" to "ya no existe",
+    "These files are left out of Large files. Tick the ones to show again." to
+        "Estos archivos no aparecen en Archivos grandes. Marca los que quieras volver a mostrar.",
     "Nothing to clean" to "Nada que limpiar",
     "Scan failed: {0}" to "Falló el análisis: {0}",
     "Refusing to delete {0}" to "No se permite eliminar {0}",

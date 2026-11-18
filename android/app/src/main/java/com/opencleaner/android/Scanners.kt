@@ -17,6 +17,23 @@ data class CleanItem(
     val empty: Boolean = false,
 )
 
+/** Large files the user chose to hide: kept out of the Large files list on every scan (saved in prefs). */
+object HiddenFiles {
+    private const val KEY = "hidden_large_files"
+    const val ROW_ID = "hidden-large-files"
+    private var prefs: android.content.SharedPreferences? = null
+
+    fun init(ctx: Context) {
+        if (prefs == null) prefs = ctx.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    }
+
+    fun all(): List<String> = (prefs?.getStringSet(KEY, emptySet()) ?: emptySet()).sorted()
+    fun contains(path: String) = path in all()
+    fun add(path: String) = save(all().toSet() + path)
+    fun remove(path: String) = save(all().toSet() - path)
+    private fun save(set: Set<String>) { prefs?.edit()?.putStringSet(KEY, set)?.apply() }
+}
+
 data class CleanResult(val title: String, val skipped: Int, val error: String?)
 
 /** Storage tab state that survives switching tabs (the screen itself is rebuilt each time).
@@ -68,6 +85,7 @@ object Scanners {
     private class ScanDef(val group: String, val label: String, val fn: () -> List<CleanItem>)
 
     fun runAll(ctx: Context): List<CleanItem> {
+        HiddenFiles.init(ctx)
         val defs = listOf(
             ScanDef(tr("This app"), tr("OpenCleaner's own cache")) { ownCache(ctx) },
             ScanDef(tr("Junk files"), tr("Thumbnail leftovers")) { thumbnails() },
@@ -88,7 +106,31 @@ object Scanners {
                 out += CleanItem("fail:${d.label}", d.group, d.label, tr("Scan failed: {0}", e.message), null, empty = true)
             }
         }
-        return out
+        return withHiddenRow(out)
+    }
+
+    /** The "Hidden files (N)" row at the end of the Large files group (none when nothing is hidden). */
+    fun withHiddenRow(items: List<CleanItem>): List<CleanItem> {
+        val rest = items.filter { it.id != HiddenFiles.ROW_ID }
+        val n = HiddenFiles.all().size
+        if (n == 0) return rest
+        val at = rest.indexOfLast { it.group == tr("Large files") } + 1
+        val row = CleanItem(HiddenFiles.ROW_ID, tr("Large files"), tr("Hidden files ({0})", n),
+            tr("Kept out of this list so they are not deleted by mistake."), null, empty = true)
+        return if (at == 0) rest + row else rest.take(at) + row + rest.drop(at)
+    }
+
+    /** Hides one large file: drops its row (an empty Large files group gets its "Clean" row back). */
+    fun hide(items: List<CleanItem>, item: CleanItem): List<CleanItem> {
+        item.files.firstOrNull()?.let { HiddenFiles.add(it.path) }
+        val at = items.indexOf(item)
+        var out = items - item
+        if (out.none { it.group == tr("Large files") && !it.empty }) {
+            val emptyRow = CleanItem("empty:" + tr("Files over 100 MB"), tr("Large files"), tr("Files over 100 MB"),
+                tr("Nothing to clean"), 0, empty = true)
+            out = out.take(at) + emptyRow + out.drop(at)
+        }
+        return withHiddenRow(out)
     }
 
     fun clean(ctx: Context, item: CleanItem): CleanResult {
@@ -194,7 +236,7 @@ object Scanners {
                 if (depth == 0 && k.name == "Android") continue
                 if (k.isDirectory) {
                     if (!Files.isSymbolicLink(k.toPath())) walk(k, depth + 1)
-                } else if (k.length() >= min) found.add(k)
+                } else if (k.length() >= min && !HiddenFiles.contains(k.path)) found.add(k)
             }
         }
         walk(root(), 0)

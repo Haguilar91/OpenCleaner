@@ -30,7 +30,7 @@ HALF = 1.0          # half the Lucide stroke width (2 px on a 24 px grid)
 LINUX = {"go-up": "up", "go-next": "chevron-right", "folder": "folder", "text-x-generic": "file",
          "user-trash": "delete", "view-refresh": "refresh", "edit-clear-all": "clean",
          "drive-harddisk": "storage", "view-app-grid": "apps", "view-grid": "map", "view-reveal": "review",
-         "software-update-available": "update", "object-select": "check"}
+         "software-update-available": "update", "object-select": "check", "view-conceal": "hide"}
 
 
 def load():

@@ -35,6 +35,7 @@ namespace OpenCleaner
         public List<string> Roots = new List<string>();   // deletes are refused outside these
         public Action Before, After;
         public Func<string> Action;            // extra step; returns an error message or null
+        public string Kind = "";               // "big" (one large file) or "hidden" (the Hidden files row)
     }
 
     class CleanResult
@@ -72,7 +73,7 @@ namespace OpenCleaner
         // OneDrive "online-only" files (Files On-Demand) and offline files take no space on this disk.
         const int RecallOnDataAccess = 0x400000, Offline = 0x1000;
 
-        static bool CloudOnly(FileAttributes a)
+        public static bool CloudOnly(FileAttributes a)
         {
             return ((int)a & (RecallOnDataAccess | Offline)) != 0;
         }
@@ -267,6 +268,51 @@ namespace OpenCleaner
         public static extern bool SetProcessDPIAware();
     }
 
+    // Large files the user hid: kept out of the Large files list on every scan (HKCU\Software\OpenCleaner).
+    static class HiddenFiles
+    {
+        const string KeyPath = @"Software\OpenCleaner", Name = "HiddenLargeFiles";
+
+        public static List<string> All()
+        {
+            List<string> list = new List<string>();
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(KeyPath))
+                {
+                    string[] v = k == null ? null : k.GetValue(Name) as string[];
+                    if (v != null) list.AddRange(v.Where(x => x.Length > 0));
+                }
+            }
+            catch (Exception) { }
+            list.Sort(StringComparer.OrdinalIgnoreCase);
+            return list;
+        }
+
+        public static void Save(IEnumerable<string> paths)
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.CreateSubKey(KeyPath))
+                    k.SetValue(Name, paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(), RegistryValueKind.MultiString);
+            }
+            catch (Exception) { }
+        }
+
+        public static void Add(string path)
+        {
+            List<string> list = All();
+            list.Add(path);
+            Save(list);
+        }
+
+        public static void Remove(ICollection<string> paths)
+        {
+            HashSet<string> drop = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+            Save(All().Where(x => !drop.Contains(x)));
+        }
+    }
+
     // ------------------------------------------------------------------ scanners
     class ScanDef
     {
@@ -295,6 +341,7 @@ namespace OpenCleaner
             defs.Add(new ScanDef(BrowserCaches, L.T("Browser caches"), L.T("Browser caches")));
             defs.Add(new ScanDef(DevCaches, L.T("Developer caches"), L.T("Package manager caches")));
             defs.Add(new ScanDef(Steam, "Steam", L.T("Steam leftovers")));
+            defs.Add(new ScanDef(LargeFiles, L.T("Large files"), L.T("Files over 100 MB")));
 
             List<Item> all = new List<Item>();
             foreach (ScanDef d in defs)
@@ -319,7 +366,91 @@ namespace OpenCleaner
                     all.Add(e);
                 }
             }
-            return all;
+            return WithHiddenRow(all);
+        }
+
+        // The "Hidden files (N)" row at the end of the Large files group (none when nothing is hidden).
+        public static List<Item> WithHiddenRow(List<Item> items)
+        {
+            List<Item> outList = items.Where(x => x.Kind != "hidden").ToList();
+            int n = HiddenFiles.All().Count;
+            if (n == 0) return outList;
+            Item row = new Item();
+            row.Group = L.T("Large files"); row.Title = L.T("Hidden files ({0})", n);
+            row.Subtitle = L.T("Kept out of this list so they are not deleted by mistake.");
+            row.Empty = true; row.Kind = "hidden";
+            int at = outList.FindLastIndex(x => x.Group == L.T("Large files")) + 1;
+            if (at == 0) outList.Add(row); else outList.Insert(at, row);
+            return outList;
+        }
+
+        // Hides one large file: drops its row (an empty Large files group gets its "Clean" row back).
+        public static List<Item> Hide(List<Item> items, Item it)
+        {
+            if (it.Paths.Count > 0) HiddenFiles.Add(it.Paths[0]);
+            List<Item> outList = new List<Item>(items);
+            int at = outList.IndexOf(it);
+            if (at < 0) return items;
+            outList.RemoveAt(at);
+            if (!outList.Any(x => x.Kind == "big"))
+            {
+                Item e = new Item();
+                e.Group = L.T("Large files"); e.Title = L.T("Files over 100 MB"); e.Subtitle = L.T("Nothing to clean");
+                e.Size = 0; e.Empty = true;
+                outList.Insert(at, e);
+            }
+            return WithHiddenRow(outList);
+        }
+
+        const long LargeMin = 100L * 1024 * 1024;
+
+        // The biggest files (over 100 MB) in the user's own folders, unticked. AppData, hidden and system
+        // folders, dot folders, links and OneDrive online-only files are skipped.
+        static List<Item> LargeFiles()
+        {
+            HashSet<string> hidden = new HashSet<string>(HiddenFiles.All(), StringComparer.OrdinalIgnoreCase);
+            List<KeyValuePair<long, string>> found = new List<KeyValuePair<long, string>>();
+            WalkLarge(Profile, 0, hidden, found);
+            found.Sort((a, b) => b.Key.CompareTo(a.Key));
+            List<Item> list = new List<Item>();
+            foreach (KeyValuePair<long, string> f in found.Take(15))
+            {
+                Item it = new Item();
+                it.Group = L.T("Large files"); it.Title = Path.GetFileName(f.Value);
+                it.Subtitle = Path.GetDirectoryName(f.Value);
+                it.Size = f.Key; it.Kind = "big";
+                it.Paths.Add(f.Value);
+                it.Roots.Add(Profile);
+                list.Add(it);
+            }
+            return list;
+        }
+
+        static void WalkLarge(string dir, int depth, HashSet<string> hidden, List<KeyValuePair<long, string>> found)
+        {
+            if (depth > 12) return;
+            const FileAttributes skip = FileAttributes.ReparsePoint | FileAttributes.Hidden | FileAttributes.System;
+            string[] files, dirs;
+            try { files = Directory.GetFiles(dir); dirs = Directory.GetDirectories(dir); }
+            catch (Exception) { return; }
+            foreach (string f in files)
+            {
+                try
+                {
+                    FileInfo fi = new FileInfo(f);
+                    if (fi.Name.StartsWith(".") || (fi.Attributes & skip) != 0 || Util.CloudOnly(fi.Attributes)) continue;
+                    if (fi.Length >= LargeMin && !hidden.Contains(f)) found.Add(new KeyValuePair<long, string>(fi.Length, f));
+                }
+                catch (Exception) { }
+            }
+            foreach (string d in dirs)
+            {
+                string name = Path.GetFileName(d);
+                if (name.StartsWith(".") || (depth == 0 && name.Equals("AppData", StringComparison.OrdinalIgnoreCase))) continue;
+                try { if ((File.GetAttributes(d) & skip) != 0) continue; }
+                catch (Exception) { continue; }
+                WalkLarge(d, depth + 1, hidden, found);
+            }
         }
 
         public static CleanResult Clean(Item it)
@@ -1094,6 +1225,71 @@ namespace OpenCleaner
     }
 
     // ------------------------------------------------------------------ installed programs
+    // Lists the hidden large files with checkboxes; the ticked ones are shown again (Chosen).
+    class HiddenForm : Form
+    {
+        public List<string> Chosen = new List<string>();
+
+        public HiddenForm()
+        {
+            Text = L.T("Hidden files");
+            Font = new Font("Segoe UI", 9f);
+            ClientSize = new Size(620, 400);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
+
+            Label hint = new Label();
+            hint.Dock = DockStyle.Top; hint.Height = 30;
+            hint.Padding = new Padding(10, 8, 10, 0);
+            hint.ForeColor = Color.DimGray;
+            hint.Text = L.T("These files are left out of Large files. Tick the ones to show again.");
+
+            ListView lv = new ListView();
+            lv.Dock = DockStyle.Fill;
+            lv.View = View.Details; lv.CheckBoxes = true; lv.FullRowSelect = true;
+            lv.HeaderStyle = ColumnHeaderStyle.None;
+            lv.BorderStyle = BorderStyle.None;
+            lv.Columns.Add("Name", 200);
+            lv.Columns.Add("Folder", 280);
+            lv.Columns.Add("Size", 110, HorizontalAlignment.Right);
+            foreach (string p in HiddenFiles.All())
+            {
+                ListViewItem lvi = new ListViewItem(Path.GetFileName(p));
+                lvi.Name = p;
+                lvi.SubItems.Add(Path.GetDirectoryName(p));
+                string size;
+                try { size = File.Exists(p) ? Util.Fmt(new FileInfo(p).Length) : L.T("no longer exists"); }
+                catch (Exception) { size = "?"; }
+                lvi.SubItems.Add(size);
+                lv.Items.Add(lvi);
+            }
+
+            Panel bar = new Panel();
+            bar.Dock = DockStyle.Bottom; bar.Height = 44;
+            Button again = new Button();
+            again.Text = L.T("Show again"); again.SetBounds(380, 7, 140, 30);
+            again.Enabled = false;
+            Button close = new Button();
+            close.Text = L.T("Close"); close.SetBounds(530, 7, 80, 30);
+            close.DialogResult = DialogResult.Cancel;
+            lv.ItemChecked += delegate { again.Enabled = lv.CheckedItems.Count > 0; };
+            again.Click += delegate
+            {
+                foreach (ListViewItem lvi in lv.CheckedItems) Chosen.Add(lvi.Name);
+                DialogResult = DialogResult.OK;
+            };
+            bar.Controls.Add(again);
+            bar.Controls.Add(close);
+            CancelButton = close;
+
+            Controls.Add(lv);
+            Controls.Add(hint);
+            Controls.Add(bar);
+            lv.BringToFront();
+        }
+    }
+
     class AppEntry
     {
         public string KeyPath, Name, Publisher, Version, InstallLocation, UninstallString;
@@ -1630,7 +1826,8 @@ namespace OpenCleaner
         // Clean tab
         ListView cleanList = new ListView();
         Label summary = new Label();
-        Button scanBtn = new Button(), cleanBtn = new Button(), adminBtn = new Button(), reviewBtn = new Button();
+        Button scanBtn = new Button(), cleanBtn = new Button(), adminBtn = new Button(), reviewBtn = new Button(), hideBtn = new Button();
+        ContextMenuStrip cleanMenu = new ContextMenuStrip();
         List<Item> items = new List<Item>();
         bool busy, populating;
 
@@ -1807,8 +2004,22 @@ namespace OpenCleaner
             StyleButton(reviewBtn, false);
             reviewBtn.Enabled = false;
             reviewBtn.Click += delegate { ReviewCurrent(); };
-            cleanList.SelectedIndexChanged += delegate { reviewBtn.Enabled = CurrentItem() != null; };
+            hideBtn.Text = L.T("Hide this file"); hideBtn.SetBounds(542, 12, 150, 32);
+            StyleButton(hideBtn, false);
+            hideBtn.Visible = false;
+            hideBtn.Click += delegate { HideCurrent(); };
+            cleanList.SelectedIndexChanged += delegate { UpdateRowButtons(); };
             cleanList.DoubleClick += delegate { ReviewCurrent(); };
+            cleanList.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) ReviewCurrent(); };
+            cleanList.ContextMenuStrip = cleanMenu;
+            cleanMenu.Opening += (s, e) =>
+            {
+                cleanMenu.Items.Clear();
+                Item it = RowItem();
+                if (it == null || (CurrentItem() == null && it.Kind != "hidden")) { e.Cancel = true; return; }
+                cleanMenu.Items.Add(reviewBtn.Text, null, delegate { ReviewCurrent(); });
+                if (it.Kind == "big") cleanMenu.Items.Add(L.T("Hide this file"), null, delegate { HideCurrent(); });
+            };
             cleanBtn.Text = L.T("Clean selected"); cleanBtn.Width = 170; cleanBtn.Height = 34;
             StyleButton(cleanBtn, true);
             cleanBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -1817,31 +2028,97 @@ namespace OpenCleaner
             summary.TextAlign = ContentAlignment.MiddleRight;
             summary.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
-            bar.Controls.Add(scanBtn); bar.Controls.Add(adminBtn); bar.Controls.Add(reviewBtn);
+            bar.Controls.Add(scanBtn); bar.Controls.Add(adminBtn); bar.Controls.Add(reviewBtn); bar.Controls.Add(hideBtn);
             bar.Controls.Add(summary); bar.Controls.Add(cleanBtn);
-            bar.Resize += delegate
-            {
-                cleanBtn.Location = new Point(bar.Width - cleanBtn.Width - S(12), S(11));
-                summary.Location = new Point(cleanBtn.Left - summary.Width - S(10), S(12));
-            };
+            bar.Resize += delegate { LayoutCleanBar(bar); };
+            hideBtn.VisibleChanged += delegate { LayoutCleanBar(bar); };
             page.Controls.Add(cleanList);
             page.Controls.Add(bar);
             cleanList.BringToFront();
         }
 
+        // Clean button on the right, the summary fills what is left between it and the row buttons.
+        void LayoutCleanBar(Panel bar)
+        {
+            cleanBtn.Location = new Point(bar.Width - cleanBtn.Width - S(12), S(11));
+            int left = (hideBtn.Visible ? hideBtn.Right : reviewBtn.Right) + S(10);
+            summary.Width = Math.Max(S(120), cleanBtn.Left - S(10) - left);
+            summary.Location = new Point(cleanBtn.Left - summary.Width - S(10), S(12));
+        }
+
+        // The highlighted Clean row's item (any row).
+        Item RowItem()
+        {
+            return cleanList.SelectedItems.Count == 0 ? null : cleanList.SelectedItems[0].Tag as Item;
+        }
+
         // The highlighted Clean row's item, if it has files that can be reviewed.
         Item CurrentItem()
         {
-            if (cleanList.SelectedItems.Count == 0) return null;
-            Item it = cleanList.SelectedItems[0].Tag as Item;
+            Item it = RowItem();
             return (it != null && !it.Empty && it.Paths.Count > 0) ? it : null;
+        }
+
+        static bool SingleFile(Item it)
+        {
+            return it.Paths.Count == 1 && !Util.IsDir(it.Paths[0]) && File.Exists(it.Paths[0]);
+        }
+
+        // The review button follows the row: one file opens straight in the preview, the Hidden files row
+        // lists the hidden files, anything else lists its files.
+        void UpdateRowButtons()
+        {
+            Item row = RowItem();
+            Item it = CurrentItem();
+            bool hiddenRow = row != null && row.Kind == "hidden";
+            reviewBtn.Enabled = it != null || hiddenRow;
+            reviewBtn.Text = hiddenRow ? L.T("Show hidden...")
+                           : (it != null && SingleFile(it) ? L.T("Preview...") : L.T("Review files..."));
+            hideBtn.Visible = it != null && it.Kind == "big";
         }
 
         void ReviewCurrent()
         {
+            Item row = RowItem();
+            if (row != null && row.Kind == "hidden") { ShowHidden(); return; }
             Item it = CurrentItem();
             if (it == null) return;
+            if (SingleFile(it)) { PreviewForm.Ask(this, it.Paths[0], false); return; }
             using (ReviewForm f = new ReviewForm(it)) f.ShowDialog(this);
+        }
+
+        // Keeps a large file out of the list from now on; nothing is deleted.
+        void HideCurrent()
+        {
+            Item it = CurrentItem();
+            if (it == null || it.Kind != "big" || busy) return;
+            foreach (ListViewItem lvi in cleanList.Items)
+            {
+                Item x = lvi.Tag as Item;
+                if (x != null) x.Selected = lvi.Checked;   // keep the ticks through the refill
+            }
+            items = Scanners.Hide(items, it);
+            Populate();
+            foreach (ListViewItem lvi in cleanList.Items)
+            {
+                Item x = lvi.Tag as Item;
+                if (x != null && x.Kind == "hidden") { lvi.EnsureVisible(); break; }
+            }
+            UpdateRowButtons();
+            UpdateSummary();
+        }
+
+        void ShowHidden()
+        {
+            List<string> back;
+            using (HiddenForm f = new HiddenForm())
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) return;
+                back = f.Chosen;
+            }
+            if (back.Count == 0) return;
+            HiddenFiles.Remove(back);
+            Scan();
         }
 
         // A 1px-wide image list is the standard trick to make ListView rows taller.
@@ -1947,7 +2224,8 @@ namespace OpenCleaner
                 lvi.Group = g;
                 lvi.Tag = it;
                 lvi.Checked = it.Selected && !Disabled(it);
-                if (it.Empty) lvi.ForeColor = it.Failed ? Color.Firebrick : Green;
+                if (it.Kind == "hidden") { lvi.ForeColor = Color.DimGray; lvi.SubItems[2].Text = ""; }
+                else if (it.Empty) lvi.ForeColor = it.Failed ? Color.Firebrick : Green;
                 else if (Disabled(it)) lvi.ForeColor = Color.Gray;
                 cleanList.Items.Add(lvi);
             }

@@ -140,6 +140,8 @@ fun PermissionScreen(onGranted: () -> Unit = {}) {
 fun CleanScreen(vm: CleanVm) {
     val groups = vm.items.groupBy { it.group }
     var reviewing by remember { mutableStateOf<CleanItem?>(null) }
+    var previewing by remember { mutableStateOf<File?>(null) }
+    var showHidden by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             LazyColumn(Modifier.weight(1f)) {
@@ -149,7 +151,14 @@ fun CleanScreen(vm: CleanVm) {
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(16.dp, 12.dp, 16.dp, 4.dp))
                     }
-                    items(list, key = { it.id }) { CleanRow(vm, it) { reviewing = it } }
+                    items(list, key = { it.id }) { item ->
+                        if (item.id == HiddenFiles.ROW_ID) HiddenRow(item) { showHidden = true }
+                        else CleanRow(vm, item) {
+                            // the eye: a single file opens straight in the preview, anything else lists its files
+                            val one = item.files.singleOrNull()
+                            if (one != null && one.isFile) previewing = one else reviewing = item
+                        }
+                    }
                 }
             }
             HorizontalDivider()
@@ -176,6 +185,8 @@ fun CleanScreen(vm: CleanVm) {
     }
 
     reviewing?.let { ReviewDialog(it) { reviewing = null } }
+    previewing?.let { PreviewDialog(it, { previewing = null }) }
+    if (showHidden) HiddenDialog(vm) { showHidden = false }
     if (vm.confirming) {
         AlertDialog(
             onDismissRequest = { vm.confirming = false },
@@ -220,9 +231,73 @@ private fun CleanRow(vm: CleanVm, item: CleanItem, onReview: () -> Unit) {
         if (item.empty) { Ico(R.drawable.ic_check, tint = Green, size = 16); Text(" " + tr("status|Clean"), color = Green) }
         else {
             Text(fmt(item.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconButton(onClick = onReview) { Ico(R.drawable.ic_review, tr("Review files")) }
+            val single = item.files.singleOrNull()?.isFile == true
+            IconButton(onClick = onReview) { Ico(R.drawable.ic_review, if (single) tr("Preview") else tr("Review files")) }
+            if (item.id.startsWith("big:")) {
+                IconButton(onClick = { vm.hide(item) }) { Ico(R.drawable.ic_hide, tr("Hide this file")) }
+            }
         }
     }
+}
+
+/** "Hidden files (N)": large files the user hid; tapping it lists them so they can be shown again. */
+@Composable
+private fun HiddenRow(item: CleanItem, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().focusRing().clickable { onOpen() }.padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+            Ico(R.drawable.ic_hide, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        TextButton(onClick = onOpen) { Text(tr("Show")) }
+    }
+}
+
+@Composable
+private fun HiddenDialog(vm: CleanVm, onDismiss: () -> Unit) {
+    val all = remember { HiddenFiles.all() }
+    var back by remember { mutableStateOf<Set<String>>(emptySet()) }   // ticked to show again
+    val root = remember { Scanners.root().path }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Hidden files")) },
+        text = {
+            Column {
+                Text(tr("These files are left out of Large files. Tick the ones to show again."),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn(Modifier.heightIn(max = 380.dp)) {
+                    items(all, key = { it }) { p ->
+                        val f = File(p)
+                        val toggle = { back = if (p in back) back - p else back + p }
+                        Row(Modifier.fillMaxWidth().focusRing().clickable { toggle() }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = p in back, onCheckedChange = { toggle() })
+                            Column(Modifier.weight(1f)) {
+                                Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text((f.parent ?: "").removePrefix(root).ifEmpty { "/" } +
+                                    (if (f.exists()) " · " + fmt(f.length()) else " · " + tr("no longer exists")),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onDismiss(); vm.unhide(back.toList()) }, enabled = back.isNotEmpty()) {
+                Text(tr("Show again"))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Close")) } },
+    )
 }
 
 // ---------------------------------------------------------------- storage browser

@@ -24,6 +24,7 @@ class CleanVm(app: Application) : AndroidViewModel(app) {
     val chosen: List<CleanItem> get() = items.filter { it.id in selected && !it.empty }
 
     init {
+        HiddenFiles.init(app)
         refreshFree()
         scan()
     }
@@ -38,6 +39,20 @@ class CleanVm(app: Application) : AndroidViewModel(app) {
 
     fun toggle(id: String) {
         selected = if (id in selected) selected - id else selected + id
+    }
+
+    /** Keeps a large file out of the list from now on (it is never deleted by the app). */
+    fun hide(item: CleanItem) {
+        if (busy) return
+        selected = selected - item.id
+        items = Scanners.hide(items, item)
+    }
+
+    /** Puts hidden files back; the next scan lists them again. */
+    fun unhide(paths: List<String>) {
+        paths.forEach { HiddenFiles.remove(it) }
+        items = Scanners.withHiddenRow(items)
+        scan()
     }
 
     fun scan() {

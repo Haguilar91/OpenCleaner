@@ -9,6 +9,9 @@ final class CleanerStore: ObservableObject {
     @Published var message: String?
     @Published var confirming = false
     @Published var reviewing: CleanItem?
+    @Published var previewing: URL?          // the eye on a single-file row opens the preview directly
+    @Published var showHidden = false        // the Hidden files sheet
+    @Published var notice: String?           // short line under the list after hiding a file
     @Published var update: Release?          // a newer release on GitHub
     @Published var updating = false
     @Published var offerUpdate = false       // show the "Update to …?" question
@@ -52,9 +55,25 @@ final class CleanerStore: ObservableObject {
 
     func setSelected(_ id: UUID, _ on: Bool) {
         if let i = items.firstIndex(where: { $0.id == id }) { items[i].selected = on }
+        notice = nil
+    }
+
+    /// Keeps a large file out of the list from now on; nothing is deleted.
+    func hide(_ item: CleanItem) {
+        guard !busy else { return }
+        items = Scanners.hide(items, item)
+        notice = tr("{0} is hidden. It stays out of Large files until you show it again.", item.title)
+    }
+
+    /// Puts hidden files back; the rescan lists them again.
+    func unhide(_ paths: Set<String>) async {
+        HiddenFiles.remove(paths)
+        items = Scanners.withHiddenRow(items)
+        await scan()
     }
 
     func scan() async {
+        notice = nil
         guard !busy else { return }
         busy = true; busyText = tr("Scanning…")
         items = await Task.detached(priority: .userInitiated) { Scanners.runAll() }.value

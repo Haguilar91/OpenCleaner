@@ -13,6 +13,16 @@ struct CleanItem: Identifiable, Sendable {
     var empty = false              // checked, nothing to clean
     var failed = false
     var settingsURL: URL? = nil    // failed row: System Settings page that fixes it (Full Disk Access)
+    var kind = ""                  // "big" (one large file) or "hidden" (the Hidden files row)
+}
+
+/// Large files the user hid: kept out of the Large files list on every scan (UserDefaults).
+enum HiddenFiles {
+    private static let key = "hiddenLargeFiles"
+    static var all: [String] { (UserDefaults.standard.stringArray(forKey: key) ?? []).sorted() }
+    static func add(_ path: String) { save(Set(all).union([path])) }
+    static func remove(_ paths: Set<String>) { save(Set(all).subtracting(paths)) }
+    private static func save(_ s: Set<String>) { UserDefaults.standard.set(s.sorted(), forKey: key) }
 }
 
 /// A scan that could not read what it needs. Shown as a red "Scan failed" row, never as "Clean".
@@ -41,6 +51,7 @@ enum Scanners {
         (simulators, tr("Developer"), tr("Unavailable simulators")),
         (iosBackups, tr("Device backups"), tr("iPhone and iPad backups")),
         (steam, "Steam", tr("Steam leftovers")),
+        (largeFiles, tr("Large files"), tr("Files over 100 MB")),
     ]
 
     static func runAll() -> [CleanItem] {
@@ -58,7 +69,66 @@ enum Scanners {
                 out.append(row)
             }
         }
+        return withHiddenRow(out)
+    }
+
+    /// The "Hidden files (N)" row at the end of the Large files group (none when nothing is hidden).
+    static func withHiddenRow(_ items: [CleanItem]) -> [CleanItem] {
+        var out = items.filter { $0.kind != "hidden" }
+        let n = HiddenFiles.all.count
+        if n == 0 { return out }
+        let row = CleanItem(group: tr("Large files"), title: tr("Hidden files ({0})", n),
+                            subtitle: tr("Kept out of this list so they are not deleted by mistake."),
+                            size: nil, empty: true, kind: "hidden")
+        let at = (out.lastIndex { $0.group == tr("Large files") } ?? (out.count - 1)) + 1
+        out.insert(row, at: at)
         return out
+    }
+
+    /// Hides one large file: drops its row (an empty Large files group gets its "Clean" row back).
+    static func hide(_ items: [CleanItem], _ item: CleanItem) -> [CleanItem] {
+        if let p = item.paths.first { HiddenFiles.add(p.path) }
+        var out = items
+        guard let at = out.firstIndex(where: { $0.id == item.id }) else { return items }
+        out.remove(at: at)
+        if !out.contains(where: { $0.kind == "big" }) {
+            out.insert(CleanItem(group: tr("Large files"), title: tr("Files over 100 MB"),
+                                 subtitle: tr("Nothing to clean"), size: 0, empty: true), at: at)
+        }
+        return withHiddenRow(out)
+    }
+
+    // MARK: large files
+    static let largeMin: Int64 = 100 * 1024 * 1024
+
+    /// The biggest files (over 100 MB) in the home folder, unticked. ~/Library, hidden files and the
+    /// inside of packages (apps, Photos libraries) are skipped: that is app data, not the user's files.
+    static func largeFiles() -> [CleanItem] {
+        let hidden = Set(HiddenFiles.all)
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        let homeURL = URL(fileURLWithPath: home)
+        var found: [(URL, Int64)] = []
+        for top in FS.children(homeURL) where !top.lastPathComponent.hasPrefix(".") && top.lastPathComponent != "Library" {
+            var walk: [URL] = [top]
+            if FS.isRealDir(top) {
+                let e = FileManager.default.enumerator(at: top, includingPropertiesForKeys: Array(keys),
+                                                       options: [.skipsHiddenFiles, .skipsPackageDescendants],
+                                                       errorHandler: { _, _ in true })
+                walk = (e?.allObjects as? [URL]) ?? []
+            }
+            for f in walk {
+                guard let v = try? f.resourceValues(forKeys: keys), v.isRegularFile == true else { continue }
+                let size = Int64(v.totalFileAllocatedSize ?? v.fileAllocatedSize ?? 0)
+                if size >= largeMin && !hidden.contains(f.path) { found.append((f, size)) }
+            }
+        }
+        found.sort { $0.1 > $1.1 }
+        return found.prefix(15).map { f, size in
+            let dir = f.deletingLastPathComponent().path
+            let shown: String = dir.hasPrefix(home) ? "~" + String(dir.dropFirst(home.count)) : dir
+            return CleanItem(group: tr("Large files"), title: f.lastPathComponent, subtitle: shown,
+                             size: size, paths: [f], kind: "big")
+        }
     }
 
     /// Deletes the item's files and runs its command. Returns an error message (nil when it worked)

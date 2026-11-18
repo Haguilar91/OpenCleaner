@@ -10,6 +10,7 @@ import glob
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -154,6 +155,18 @@ ES = {
     "Scan failed: {0}": "Falló el análisis: {0}",
     "Scan failed": "Falló el análisis",
     "Review files": "Revisar archivos",
+    "Large files": "Archivos grandes",
+    "Files over 100 MB": "Archivos de más de 100 MB",
+    "Preview": "Vista previa",
+    "Hidden files": "Archivos ocultos",
+    "Hidden files ({0})": "Archivos ocultos ({0})",
+    "Kept out of this list so they are not deleted by mistake.": "Se dejan fuera de esta lista para que no se eliminen por error.",
+    "Hide this file": "Ocultar este archivo",
+    "Show": "Mostrar",
+    "Show again": "Volver a mostrar",
+    "no longer exists": "ya no existe",
+    "These files are left out of Large files. Tick the ones to show again.": "Estos archivos no aparecen en Archivos grandes. Marca los que quieras volver a mostrar.",
+    "{0} is hidden. It stays out of Large files until you show it again.": "{0} quedó oculto. No aparecerá en Archivos grandes hasta que lo vuelvas a mostrar.",
     "{0} selected · {1}": "Seleccionados: {0} · {1}",
     "+ more": "+ más",
     "Delete selected items?": "¿Eliminar los elementos seleccionados?",
@@ -460,6 +473,7 @@ class Item:
     confirm_note: str = ""
     empty: bool = False                         # checked, nothing to clean
     failed: bool = False
+    kind: str = ""                              # "big" (one large file) or "hidden" (the Hidden files row)
 
 
 # ---------------------------------------------------------------- scanners
@@ -744,6 +758,55 @@ def scan_steam():
     return items
 
 
+LARGE_MIN_BYTES = 100 * 1024 * 1024
+LARGE_SHOWN = 15
+
+
+def hidden_large_files():
+    """Large files the user hid: kept out of the Large files list on every scan."""
+    return sorted(p for p in load_settings().get("hidden_large_files", []) if isinstance(p, str))
+
+
+def set_hidden_large_files(paths):
+    save_settings(hidden_large_files=sorted(set(paths)))
+
+
+def large_file_item(size, path):
+    where = os.path.dirname(path)
+    if (where + os.sep).startswith(HOME + os.sep) or where == HOME:
+        where = "~" + where[len(HOME):]
+    return Item(tr("Large files"), os.path.basename(path), where, size, False, paths=[path], kind="big")
+
+
+def scan_large_files(root=None):
+    """The biggest files (over 100 MB) in the user's own folders, unticked. Hidden (dot) files and folders
+    are skipped: they hold app data (Steam games, Flatpak, caches) that other categories handle."""
+    root = root or HOME
+    hidden = set(hidden_large_files())
+    found = []
+    for dirpath, dirs, files in os.walk(root, onerror=lambda e: None):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]   # os.walk does not follow folder links
+        for name in files:
+            if name.startswith("."):
+                continue
+            p = os.path.join(dirpath, name)
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode) and st.st_size >= LARGE_MIN_BYTES and p not in hidden:
+                found.append((st.st_size, p))
+    found.sort(reverse=True)
+    return [large_file_item(size, p) for size, p in found[:LARGE_SHOWN]]
+
+
+def hidden_files_item():
+    n = len(hidden_large_files())
+    return Item(tr("Large files"), tr("Hidden files ({0})", n),
+                tr("Kept out of this list so they are not deleted by mistake."), None,
+                empty=True, kind="hidden") if n else None
+
+
 def build_scanners(d):
     """(scanner, group, label shown when the scanner finds nothing), for the detected distro."""
     s = []
@@ -763,7 +826,8 @@ def build_scanners(d):
           (scan_flatpak, tr("Apps"), tr("Unused Flatpak runtimes")),
           (scan_browser_backups, tr("Browser crash-recovery backups"), tr("Crash-recovery backups")),
           (scan_user_cache, tr("Large app caches (~/.cache)"), tr("Large caches and Trash")),
-          (scan_steam, tr("Steam leftovers"), tr("Steam leftovers"))]
+          (scan_steam, tr("Steam leftovers"), tr("Steam leftovers")),
+          (scan_large_files, tr("Large files"), tr("Files over 100 MB"))]
     return s
 
 
@@ -2005,6 +2069,9 @@ class Window(Adw.ApplicationWindow):
                 except Exception as e:  # noqa: BLE001
                     items.append(Item(group, label, tr("Scan failed: {0}", e), None,
                                       empty=True, failed=True))
+            hidden = hidden_files_item()
+            if hidden:
+                items.append(hidden)   # last item, so it lands at the end of the Large files group
             GLib.idle_add(self.show_items, items)
 
         threading.Thread(target=work, daemon=True).start()
@@ -2016,12 +2083,17 @@ class Window(Adw.ApplicationWindow):
         self.page = Adw.PreferencesPage()
         self.stack.add_named(self.page, "list")
         self.rows = []
+        self.hidden_row = None
         groups = {}
         for it in items:
             g = groups.get(it.group)
             if g is None:
                 g = groups[it.group] = Adw.PreferencesGroup(title=it.group)
                 self.page.add(g)
+            if it.kind == "hidden":
+                self.hidden_row = self._hidden_row(it)
+                g.add(self.hidden_row)
+                continue
             row = Adw.ActionRow(title=GLib.markup_escape_text(it.title),
                                 subtitle=GLib.markup_escape_text(it.subtitle),
                                 subtitle_lines=2)
@@ -2036,10 +2108,19 @@ class Window(Adw.ApplicationWindow):
                 row.set_activatable_widget(check)
                 row.add_suffix(Gtk.Label(label=fmt_size(it.size), css_classes=["dim-label"]))
                 if it.paths:
+                    # the eye: one file opens straight in the preview, anything else lists its files
+                    single = len(it.paths) == 1 and os.path.isfile(it.paths[0])
                     review = Gtk.Button(icon_name="opencleaner-view-reveal-symbolic", valign=Gtk.Align.CENTER,
-                                        css_classes=["flat"], tooltip_text=tr("Review files"))
-                    review.connect("clicked", lambda _b, i=it: show_review(self, i))
+                                        css_classes=["flat"],
+                                        tooltip_text=tr("Preview") if single else tr("Review files"))
+                    review.connect("clicked", lambda _b, i=it, one=single:
+                                   show_preview(self, i.paths[0]) if one else show_review(self, i))
                     row.add_suffix(review)
+                if it.kind == "big":
+                    hide = Gtk.Button(icon_name="opencleaner-view-conceal-symbolic", valign=Gtk.Align.CENTER,
+                                      css_classes=["flat"], tooltip_text=tr("Hide this file"))
+                    hide.connect("clicked", lambda _b, i=it, r=row, grp=g: self.hide_file(i, r, grp))
+                    row.add_suffix(hide)
             g.add(row)
             self.rows.append((it, check))
         self.stack.set_visible_child_name("list")
@@ -2047,6 +2128,88 @@ class Window(Adw.ApplicationWindow):
 
     def selected(self):
         return [it for it, c in self.rows if c.get_active()]
+
+    # -- hidden large files
+    def _hidden_row(self, it):
+        row = Adw.ActionRow(title=GLib.markup_escape_text(it.title), subtitle=GLib.markup_escape_text(it.subtitle),
+                            activatable=True)
+        row.add_prefix(Gtk.Image(icon_name="opencleaner-view-conceal-symbolic", css_classes=["dim-label"],
+                                 margin_start=4, margin_end=4))
+        row.add_suffix(Gtk.Label(label=tr("Show"), css_classes=["dim-label"]))
+        row.add_suffix(Gtk.Image(icon_name="opencleaner-go-next-symbolic"))
+        row.connect("activated", lambda *_: self.show_hidden())
+        return row
+
+    def hide_file(self, it, row, group):
+        """Keeps a large file out of the list from now on; nothing is deleted."""
+        if self.busy:
+            return
+        set_hidden_large_files(hidden_large_files() + it.paths[:1])
+        group.remove(row)
+        self.rows = [(i, c) for i, c in self.rows if i is not it]
+        if self.hidden_row is not None:
+            group.remove(self.hidden_row)
+        if not any(i.kind == "big" for i, _ in self.rows):
+            done = Adw.ActionRow(title=GLib.markup_escape_text(tr("Files over 100 MB")),
+                                 subtitle=GLib.markup_escape_text(tr("Nothing to clean")))
+            done.add_prefix(Gtk.CheckButton(valign=Gtk.Align.CENTER, sensitive=False))
+            done.add_suffix(Gtk.Label(label=tr("status|Clean") + " ✓", css_classes=["success"]))
+            group.add(done)
+        self.hidden_row = self._hidden_row(hidden_files_item())
+        group.add(self.hidden_row)
+        self.update_total()
+        self.notify(tr("{0} is hidden. It stays out of Large files until you show it again.", it.title))
+
+    def show_hidden(self):
+        """Lists the hidden files; the ticked ones are shown again (after a rescan)."""
+        paths = hidden_large_files()
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=8,
+                      margin_bottom=12, margin_start=12, margin_end=12)
+        box.append(Gtk.Label(label=tr("These files are left out of Large files. Tick the ones to show again."),
+                             css_classes=["dim-label"], xalign=0, wrap=True))
+        lst = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE, css_classes=["boxed-list"])
+        checks = []
+        for p in paths:
+            try:
+                info = fmt_size(os.lstat(p).st_size)
+            except OSError:
+                info = tr("no longer exists")
+            where = os.path.dirname(p)
+            if (where + os.sep).startswith(HOME + os.sep):
+                where = "~" + where[len(HOME):]
+            row = Adw.ActionRow(title=GLib.markup_escape_text(os.path.basename(p)),
+                                subtitle=GLib.markup_escape_text(f"{where} · {info}"))
+            check = Gtk.CheckButton(valign=Gtk.Align.CENTER)
+            row.add_prefix(check)
+            row.set_activatable_widget(check)
+            lst.append(row)
+            checks.append((p, check))
+        sw = Gtk.ScrolledWindow(min_content_height=60, max_content_height=420, propagate_natural_height=True)
+        sw.set_child(lst)
+        box.append(sw)
+        dlg = Dialog(title=tr("Hidden files"), content_width=520)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        again = Gtk.Button(label=tr("Show again"), css_classes=["suggested-action"], sensitive=False)
+        close = Gtk.Button(label=tr("Close"))
+        for _p, c in checks:
+            c.connect("toggled", lambda *_: again.set_sensitive(any(x.get_active() for _q, x in checks)))
+
+        def show_again(*_):
+            back = {p for p, c in checks if c.get_active()}
+            set_hidden_large_files([p for p in hidden_large_files() if p not in back])
+            dlg.close()
+            self.scan()
+
+        again.connect("clicked", show_again)
+        close.connect("clicked", lambda *_: dlg.close())
+        buttons.append(close)
+        buttons.append(again)
+        box.append(buttons)
+        view = ToolbarView()
+        view.add_top_bar(Adw.HeaderBar())
+        view.set_content(box)
+        dlg.set_child(view)
+        dlg.present(self)
 
     def update_total(self):
         sel = self.selected()

@@ -17,6 +17,7 @@ public sealed class CleanView : UserControl
     private readonly Button cleanBtn = new() { Content = L.T("Clean selected") };
     private readonly ProgressRing ring = new() { Width = 22, Height = 22, Visibility = Visibility.Collapsed };
     private readonly List<(Item item, CheckBox box)> rows = new();
+    private List<Item> items = new();
     private bool busy;
     private bool started;
 
@@ -95,6 +96,7 @@ public sealed class CleanView : UserControl
             found = new List<Item>();
             await Ui.Message(XamlRoot, L.T("Scan failed"), ex.Message);
         }
+        items = found;
         Populate(found);
         SetBusy(false, "");
         UpdateSummary();
@@ -124,10 +126,12 @@ public sealed class CleanView : UserControl
 
     private UIElement BuildRow(Item it)
     {
+        if (it.Kind == "hidden") return BuildHiddenRow(it);
         bool disabled = Disabled(it);
         var g = new Grid { ColumnSpacing = 12 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -175,13 +179,117 @@ public sealed class CleanView : UserControl
                 Content = Icons.Make(Icons.Review, 14),
                 Padding = new Thickness(8, 4, 8, 4),
             };
-            ToolTipService.SetToolTip(review, L.T("Review files"));
-            review.Click += async (_, _) => await Preview.Review(XamlRoot, it);
+            // the eye: one file opens straight in the preview, anything else lists its files
+            bool single = it.Paths.Count == 1 && !Util.IsDir(it.Paths[0]) && File.Exists(it.Paths[0]);
+            ToolTipService.SetToolTip(review, single ? L.T("Preview") : L.T("Review files"));
+            review.Click += async (_, _) =>
+            {
+                if (single) await Preview.Show(XamlRoot, it.Paths[0], false);
+                else await Preview.Review(XamlRoot, it);
+            };
             Grid.SetColumn(review, 3);
             g.Children.Add(review);
         }
+        if (it.Kind == "big")
+        {
+            var hide = new Button { Content = Icons.Make(Icons.Hide, 14), Padding = new Thickness(8, 4, 8, 4) };
+            ToolTipService.SetToolTip(hide, L.T("Hide this file"));
+            hide.Click += (_, _) => HideFile(it);
+            Grid.SetColumn(hide, 4);
+            g.Children.Add(hide);
+        }
         if (disabled && !it.Empty) g.Opacity = 0.6;
         return Ui.Card(g);
+    }
+
+    /// <summary>"Hidden files (N)": its Show button lists the hidden large files so they can be shown again.</summary>
+    private UIElement BuildHiddenRow(Item it)
+    {
+        var g = new Grid { ColumnSpacing = 12 };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var mark = Icons.Make(Icons.Hide, 16);
+        mark.Margin = new Thickness(8, 0, 8, 0);
+        mark.Foreground = Ui.Res("TextFillColorSecondaryBrush");
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = it.Title, TextWrapping = TextWrapping.Wrap });
+        text.Children.Add(new TextBlock
+        {
+            Text = it.Subtitle,
+            Style = Ui.Sty("CaptionTextBlockStyle"),
+            Foreground = Ui.Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        var show = new Button { Content = L.T("Show"), VerticalAlignment = VerticalAlignment.Center };
+        show.Click += async (_, _) => await ShowHiddenAsync();
+        Grid.SetColumn(text, 1);
+        Grid.SetColumn(show, 2);
+        g.Children.Add(mark);
+        g.Children.Add(text);
+        g.Children.Add(show);
+        return Ui.Card(g);
+    }
+
+    /// <summary>Keeps a large file out of the list from now on; nothing is deleted.</summary>
+    private void HideFile(Item it)
+    {
+        if (busy) return;
+        foreach (var (item, box) in rows) item.Selected = box.IsChecked == true;   // keep the ticks through the refill
+        items = Scanners.Hide(items, it);
+        Populate(items);
+        UpdateSummary();
+        summary.Text = L.T("{0} is hidden. It stays out of Large files until you show it again.", it.Title);
+    }
+
+    /// <summary>Lists the hidden files with checkboxes; the ticked ones are shown again after a rescan.</summary>
+    private async Task ShowHiddenAsync()
+    {
+        var checks = new List<(string path, CheckBox box)>();
+        var list = new StackPanel { Spacing = 2 };
+        foreach (string p in HiddenFiles.All())
+        {
+            string size;
+            try { size = File.Exists(p) ? Util.Fmt(new FileInfo(p).Length) : L.T("no longer exists"); }
+            catch (Exception) { size = "?"; }
+            var label = new StackPanel();
+            label.Children.Add(new TextBlock { Text = Path.GetFileName(p), TextTrimming = TextTrimming.CharacterEllipsis });
+            label.Children.Add(new TextBlock
+            {
+                Text = Path.GetDirectoryName(p) + "  |  " + size,
+                Style = Ui.Sty("CaptionTextBlockStyle"),
+                Foreground = Ui.Res("TextFillColorSecondaryBrush"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            var box = new CheckBox { Content = label };
+            checks.Add((p, box));
+            list.Children.Add(box);
+        }
+        var body = new StackPanel { Spacing = 8 };
+        body.Children.Add(new TextBlock
+        {
+            Text = L.T("These files are left out of Large files. Tick the ones to show again."),
+            Foreground = Ui.Res("TextFillColorSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        body.Children.Add(new ScrollViewer { Content = list, MaxHeight = 340 });
+        var dlg = new ContentDialog
+        {
+            Title = L.T("Hidden files"),
+            Content = body,
+            PrimaryButtonText = L.T("Show again"),
+            CloseButtonText = L.T("Close"),
+            DefaultButton = ContentDialogButton.Close,
+            IsPrimaryButtonEnabled = false,
+            XamlRoot = XamlRoot,
+        };
+        foreach (var (_, box) in checks)
+            box.Click += (_, _) => dlg.IsPrimaryButtonEnabled = checks.Any(c => c.box.IsChecked == true);
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary) return;
+        var back = checks.Where(c => c.box.IsChecked == true).Select(c => c.path).ToList();
+        if (back.Count == 0) return;
+        HiddenFiles.Remove(back);
+        await ScanAsync();
     }
 
     private List<Item> Selected()
