@@ -10,9 +10,31 @@
 | windows | Windows x64, one run per architecture | `OpenCleaner-<v>-Setup-x64.exe`, `-arm64.exe`, `-x86.exe`, `OpenCleaner-<v>-Windows-portable.exe` |
 | android | Ubuntu, JDK 17, Gradle 8.7 | `OpenCleaner-<v>-android.apk`, `OpenCleaner-<v>-androidtv.apk` |
 | release | Ubuntu, only for a `v*` tag | a **draft** release with the 10 files and `SHA256SUMS.txt` |
+| prerelease | Ubuntu, only for the `dev` branch | replaces the `dev-build` **pre-release** with this build |
 
-Every push to `main` and every pull request builds and tests; the files are under the run's
+Every push to `main` or `dev` and every pull request builds and tests; the files are under the run's
 **Artifacts** for 14 days. A tag makes a draft release; nothing is public until you publish it.
+
+## Dev builds (pre-releases)
+
+Work that is not ready for a release goes to the `dev` branch. Every push to `dev` that changes code
+(not only `.md`/`docs/`) builds everything and, when all jobs are green, replaces the single pre-release
+tagged `dev-build` on the Releases page. Its files are named `<version>-dev.<run number>`, e.g.
+`OpenCleaner-1.4-dev.42-android.apk`, so you can tell builds apart.
+
+- The apps' update check reads `releases/latest`, which never returns a pre-release, so no user is
+  offered a dev build. Testers download it by hand.
+- The APKs are signed with the release key, so a dev APK installs over the stable app and the next
+  stable release updates it.
+- The app versions inside a dev build stay as in the source (no bump needed); the label is only in
+  the file names and the pre-release title.
+- To release: merge `dev` into `main`, bump the versions and tag as below.
+
+```sh
+git switch dev            # work and commit here
+git push -u origin dev    # first time; after that just git push
+git switch main && git merge dev && git push    # when it is ready for a release
+```
 
 ## Making a release
 

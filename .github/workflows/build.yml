@@ -2,13 +2,17 @@
 #   push to main / pull request / "Run workflow": build + test, files kept as artifacts for 14 days
 #   push a tag v1.4.0:                            the same, then a DRAFT release with every file and
 #                                                 SHA256SUMS.txt (publish it by hand after checking)
+#   push to dev:                                  the same, then the "dev-build" PRE-RELEASE is replaced
+#                                                 with this build (files named <version>-dev.<run>). The
+#                                                 apps' update check reads releases/latest, which never
+#                                                 returns a pre-release, so users are not offered it.
 # Android: the APKs must be signed with the same key as earlier releases, or Android refuses the update.
 # That key is the repository secret ANDROID_SIGNING_KEYSTORE (base64 of the keystore); see docs/ci.md.
 name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ["v*"]
     paths-ignore: ["**.md", "docs/**"]
   pull_request:
@@ -23,6 +27,7 @@ permissions:
 
 env:
   IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  IS_DEV: ${{ github.ref == 'refs/heads/dev' }}
   # SHA-256 of the certificate that signed the 1.2 and 1.3 APKs (public, not a secret)
   ANDROID_CERT_SHA256: ccffce5a0a27b7ef3c1abc3c53f2effd82f82a6790690749dd2f8b4cb97f8a48
 
@@ -31,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      label: ${{ steps.v.outputs.label }}     # used in file names: 1.5, or 1.5-dev.42 on the dev branch
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -38,7 +44,11 @@ jobs:
         run: |
           tag=""
           if [ "$IS_RELEASE" = true ]; then tag="$GITHUB_REF_NAME"; fi
-          echo "version=$(python3 .github/scripts/versions.py "$tag")" >> "$GITHUB_OUTPUT"
+          v="$(python3 .github/scripts/versions.py "$tag")"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "$IS_DEV" = true ]; then label="$v-dev.$GITHUB_RUN_NUMBER"; else label="$v"; fi
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "Build $label" >> "$GITHUB_STEP_SUMMARY"
 
   linux:
     needs: version
@@ -51,11 +61,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Single-file build (Debian 12 container)
-        run: ARCHS=${{ matrix.arch }} sh linux-cachyos/build_release_docker.sh "${{ needs.version.outputs.version }}"
+        run: ARCHS=${{ matrix.arch }} sh linux-cachyos/build_release_docker.sh "${{ needs.version.outputs.label }}"
       - uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.name }}
-          path: dist/release-${{ needs.version.outputs.version }}/opencleaner-*-linux-${{ matrix.name }}
+          path: dist/release-${{ needs.version.outputs.label }}/opencleaner-*-linux-${{ matrix.name }}
           retention-days: 14
 
   linux-tests:
@@ -91,7 +101,7 @@ jobs:
       - name: Zip
         run: |
           mkdir -p out
-          (cd macos/build && ditto -c -k --keepParent OpenCleaner.app "../../out/OpenCleaner-${{ needs.version.outputs.version }}-macOS.zip")
+          (cd macos/build && ditto -c -k --keepParent OpenCleaner.app "../../out/OpenCleaner-${{ needs.version.outputs.label }}-macOS.zip")
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -105,7 +115,7 @@ jobs:
         arch: [x64, arm64, x86]
     runs-on: windows-latest
     env:
-      V: ${{ needs.version.outputs.version }}
+      V: ${{ needs.version.outputs.label }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -138,7 +148,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     env:
-      V: ${{ needs.version.outputs.version }}
+      V: ${{ needs.version.outputs.label }}
       KEYSTORE: ${{ secrets.ANDROID_SIGNING_KEYSTORE }}
     steps:
       - uses: actions/checkout@v4
@@ -219,3 +229,43 @@ jobs:
             gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "OpenCleaner $V" --generate-notes
           fi
           echo "Draft release ready: check it, then publish it on GitHub." >> "$GITHUB_STEP_SUMMARY"
+
+  # dev branch: one rolling pre-release, tag "dev-build", replaced by every green push to dev
+  prerelease:
+    if: github.ref == 'refs/heads/dev'
+    needs: [version, linux, linux-tests, macos, windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      LABEL: ${{ needs.version.outputs.label }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Checksums
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name 'OpenCleaner-*' -o -name 'opencleaner-*' \) -exec cp {} dist/ \;
+          cd dist
+          chmod +x opencleaner-*-linux-* || true
+          sha256sum OpenCleaner-* opencleaner-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          count=$(wc -l < SHA256SUMS.txt)
+          [ "$count" -eq 9 ] || { echo "::error::expected 9 files, got $count"; exit 1; }
+      - name: Replace the dev pre-release
+        run: |
+          gh release delete dev-build --cleanup-tag --yes 2>/dev/null || true
+          {
+            echo "Development build **$LABEL**, not a release. For testing only."
+            echo
+            echo "Commit: $GITHUB_SHA ($(git log -1 --format=%s))"
+            echo
+            echo "The apps never offer this build as an update. Install it by hand; the next stable release"
+            echo "updates it as usual (Android: same signing key, so it installs over the stable app)."
+          } > notes.md
+          gh release create dev-build dist/* --prerelease --latest=false --target "$GITHUB_SHA" \
+            --title "OpenCleaner $LABEL (dev build)" --notes-file notes.md
+          echo "Pre-release dev-build updated to $LABEL." >> "$GITHUB_STEP_SUMMARY"
