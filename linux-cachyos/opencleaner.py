@@ -286,7 +286,7 @@ ES = {
     "Could not uninstall": "No se pudo desinstalar",
 }
 
-VERSION = "1.4"
+VERSION = "1.5"
 HOME = os.path.expanduser("~")
 JOURNAL_KEEP_MB = 200
 CACHE_MIN_BYTES = 100 * 1024 * 1024

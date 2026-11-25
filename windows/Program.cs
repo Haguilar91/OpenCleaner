@@ -20,8 +20,8 @@ using System.Reflection;
 
 [assembly: AssemblyTitle("OpenCleaner")]
 [assembly: AssemblyProduct("OpenCleaner")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace OpenCleaner
 {

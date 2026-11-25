@@ -24,7 +24,7 @@ Every push to `main` and every pull request builds and tests; the files are unde
    they differ or do not match the tag.
 2. Write the notes in `docs/releases/<version>.md` (used as the release text; without it GitHub
    generates notes from the commits).
-3. Push, then tag: `git tag -a v1.4.0 -m "OpenCleaner 1.4" && git push origin v1.4.0`.
+3. Push, then tag: `git tag -a v1.5.0 -m "OpenCleaner 1.5" && git push origin v1.5.0`.
 4. When the run is green, open the draft on the Releases page, check it, and publish.
 
 Re-running a tag's workflow replaces the files of its draft.
